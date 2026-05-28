@@ -14,7 +14,10 @@ import {
   ArrowUp,
   ArrowDown,
   Copy,
-  Clock
+  Clock,
+  Printer,
+  Mail,
+  FileText
 } from "lucide-react";
 
 interface SalesModuleProps {
@@ -29,6 +32,35 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
   const [dealValue, setDealValue] = useState<number>(55000);
   const [lastInteraction, setLastInteraction] = useState<number>(5);
   const [runLoading, setRunLoading] = useState(false);
+
+  // Daily briefing and digest states
+  const [digestLoading, setDigestLoading] = useState(false);
+  const [digestResult, setDigestResult] = useState<{ success: boolean; recipient: string; digestSubject: string; digestBody: string } | null>(null);
+  const [copiedDigest, setCopiedDigest] = useState(false);
+
+  const handleTriggerEmailDailyDigest = async () => {
+    setDigestLoading(true);
+    setDigestResult(null);
+    try {
+      const response = await fetch("/api/email-daily-digest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerEmail: "akindewum@gmail.com" })
+      });
+      const data = await response.json();
+      setDigestResult(data);
+    } catch (err) {
+      console.error(err);
+      setDigestResult({
+        success: false,
+        recipient: "akindewum@gmail.com",
+        digestSubject: "Error Generating Digest",
+        digestBody: "Failed to communicate with digest server. Please check your network and Gemini API keys."
+      });
+    } finally {
+      setDigestLoading(false);
+    }
+  };
 
   // Score comparison cache & copy feedback states
   const prevScoresRef = useRef<Record<string, number>>({});
@@ -741,7 +773,26 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
             </div>
 
             {activeCustomer && (
-              <div className="bg-[#0A0A0B] rounded-xl p-4 border border-[#27272A] text-sm space-y-3.5">
+              <div className="bg-[#0A0A0B] rounded-xl p-4 border border-[#27272A] text-sm space-y-3.5 relative">
+                {/* Visual Header with name and Print button */}
+                <div className="flex items-center justify-between border-b border-[#27272A]/70 pb-3 mb-2">
+                  <div>
+                    <h4 className="font-sans font-bold text-white text-base leading-tight truncate max-w-[150px]" title={activeCustomer.name}>
+                      {activeCustomer.name}
+                    </h4>
+                    <span className="text-[10px] text-zinc-500 font-mono tracking-wider block font-bold uppercase">{activeCustomer.tier} ACCOUNT</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold tracking-wide uppercase bg-zinc-900 border border-zinc-800 hover:border-[#C5A059]/40 hover:text-[#C5A059] rounded-lg text-zinc-400 font-mono transition-all cursor-pointer shadow"
+                    title="Triggers neat printer-friendly executive report preview"
+                  >
+                    <Printer className="w-3.5 h-3.5 shrink-0" />
+                    <span>Print Report</span>
+                  </button>
+                </div>
+
                 <div className="flex justify-between items-center">
                   <span className="text-[#A1A1AA]">Assigned Owner:</span>
                   <span className="text-[#E4E4E7] font-semibold">{activeCustomer.assignedRep}</span>

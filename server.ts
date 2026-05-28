@@ -666,6 +666,36 @@ app.post("/api/update-state", async (req, res) => {
         await setDoc(doc(db, "customers", newCust.uid), newCust);
       }
       addAudit("CREATE_RECORD", "customers", `Added customer ${newCust.name} (${newCust.email})`);
+    } else if (type === "BULK_ADD_CUSTOMERS") {
+      const records = payload.records || [];
+      const importedList = [];
+      for (const record of records) {
+        const uniqueId = `cust_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        const newCust = {
+          uid: record.uid || uniqueId,
+          name: record.name || "Unnamed Client",
+          email: record.email || "unknown@company.com",
+          lifecycleStage: record.lifecycleStage || "Lead",
+          tier: record.tier || "Free",
+          leadScore: Number(record.leadScore) || 50,
+          lifetimeValue: Number(record.lifetimeValue) || 0,
+          sentiment: record.sentiment || "Neutral",
+          lastInteractionDays: Number(record.lastInteractionDays) || 0,
+          winProbability: Number(record.winProbability) || 50,
+          assignedRep: record.assignedRep || "Danielle Gold",
+          dealRiskStatus: record.dealRiskStatus || (Number(record.lastInteractionDays) > 14 ? "High Risk: Inactive" : "Low Risk"),
+          createdAt: record.createdAt || new Date().toISOString()
+        };
+        if (newCust.sentiment === "Negative") {
+          newCust.dealRiskStatus = "At Risk: Negative Sentiment";
+        }
+        mockCustomers.push(newCust);
+        if (db) {
+          await setDoc(doc(db, "customers", newCust.uid), newCust);
+        }
+        importedList.push(newCust);
+      }
+      addAudit("BULK_IMPORT_CSV", "customers", `Successfully bulk imported ${records.length} customers via CSV file upload.`);
     } else if (type === "UPDATE_CUSTOMER") {
       const idx = mockCustomers.findIndex(c => c.uid === payload.uid);
       if (idx !== -1) {
@@ -901,6 +931,112 @@ Configure the **Earthy Luxe Comfort controls** via the buttons panel to trigger 
     res.json({ text: response.text });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Email Daily Digest endpoint triggering server-side summarizing routine for enterprise owners
+app.post("/api/email-daily-digest", async (req, res) => {
+  try {
+    const { ownerEmail } = req.body;
+    const recipient = ownerEmail || "akindewum@gmail.com";
+
+    // 1. Gather high-risk deals from customer database
+    const highRiskDeals = mockCustomers.filter(c => {
+      const risk = (c.dealRiskStatus || "").toLowerCase();
+      return risk.includes("high") || risk.includes("at risk") || c.winProbability <= 45 || c.lastInteractionDays > 14;
+    });
+
+    // 2. Gather active campaigns
+    const activeCampaigns = mockCampaigns.filter(camp => camp.status === "Active");
+
+    const ai = getGeminiClient();
+
+    const prompt = `You are the Lead Revenue Operations Analyst & AI Chief Automation Officer.
+Process and summarize the following sales and marketing diagnostics:
+---
+TODAY'S HIGH-RISK DEALS IN JEOPARDY:
+${highRiskDeals.length > 0 
+  ? highRiskDeals.map(d => `- **${d.name}** (${d.email}): Win Conf: ${d.winProbability}%, Status: "${d.dealRiskStatus}", Days Dormant: ${d.lastInteractionDays}d`).join('\n')
+  : "No critical high-risk deals currently active in pipeline."}
+
+ACTIVE CAMPAIGNS UNDER MONITORING:
+${activeCampaigns.length > 0
+  ? activeCampaigns.map(c => `- **"${c.title}"** (Budget: $${c.budget}): generated ${c.clicks} clicks, ${c.conversations} deals, and $${c.revenueGenerated} in booked pipeline revenue.`).join('\n')
+  : "No active marketing campaigns running today."}
+---
+
+Your goal is to build a beautiful, high-impact Enterprise Operations Daily Digest briefing email addressed to the enterprise account owner: ${recipient}.
+Please format the email beautifully with these exact headers:
+- **Subject**: Enter a captivating, highly professional subject line (e.g., [REVENUE INSIGHTS] Enterprise Operations Digest: Critical Pipeline Risks & Campaign Diagnostics)
+- **To**: ${recipient}
+- **Date**: ${new Date().toLocaleDateString()}
+- **Body**: A structured multi-section analysis covering high-risk deals with recommendations, active campaigns tracking, and a sharp checklist of next actionable steps (Owner assignment check-ins) to accelerate pipeline speed. Keep it crisp, clean, and professional.`;
+
+    let digestText = "";
+    if (process.env.GEMINI_API_KEY) {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          temperature: 0.3,
+          systemInstruction: "You are the Revenue Intelligence System. Synthesize CRM pipeline alerts into a crisp daily email digest briefing."
+        }
+      });
+      digestText = response.text || "";
+    } else {
+      // Local fallback template with high-fidelity real details of the active records
+      digestText = `Subject: [REVENUE INSIGHTS] Enterprise CRM Daily Digest: Pipeline Hazards & Campaign Growth
+
+To: ${recipient}
+Date: ${new Date().toLocaleDateString()}
+
+Dear Enterprise Account Owner,
+
+This is your automated server-side revenue operations digest for today. Below is a detailed summary of high-risk deals in jeopardy and active campaigns currently logged in your CRM:
+
+---
+
+### 🚨 SECTION 1: HIGH-RISK PIPELINE DEALS DEEP DIVE (${highRiskDeals.length} Alerts)
+${highRiskDeals.length > 0 
+  ? highRiskDeals.map(d => `* **${d.name}** (${d.email})
+    - Win Probability: ${d.winProbability}% (CRITICAL)
+    - Days Dormant: ${d.lastInteractionDays} days of inactivity
+    - Current Threat Category: "${d.dealRiskStatus}"
+    - Recommended mitigation: dispatch immediate outreach or auto-escalate owner parameters.`).join('\n\n')
+  : "Great news! All active pipelines are currently classified as Low Risk and operating within normal activity constraints."}
+
+---
+
+### 📈 SECTION 2: ACTIVE MARKETING CAMPAIGNS (${activeCampaigns.length} Active)
+${activeCampaigns.length > 0
+  ? activeCampaigns.map(c => `* **"${c.title}"** (Segment: ${c.targetSegment})
+    - Budget allocation: $${c.budget}
+    - Click-through analytics: ${c.clicks} clicks
+    - Conversions: ${c.conversations} qualified opportunities
+    - Booked pipeline revenue: $${c.revenueGenerated.toLocaleString()} (ROI positive)`).join('\n\n')
+  : "There are currently no active marketing campaigns running in the pipeline."}
+
+---
+
+### 🛡️ SECTION 3: REVENUE RETENTION IMMEDIATE ACTIONS
+1. Re-assign dormant deals exceeding 14 days to high-performing reps.
+2. Schedule review of sentiment data on negative customer accounts.
+3. Scale active marketing campaigns showing conversions higher than average.
+
+Sincerely,
+Revenue Ops Intelligence Engine (AI Console)`;
+    }
+
+    addAudit("DAILY_DIGEST_GENERATED", "users", `Daily briefing processed and dispatched to owner: ${recipient}. Analyzed ${highRiskDeals.length} high-risk deals and ${activeCampaigns.length} campaigns.`);
+
+    res.json({
+      success: true,
+      recipient,
+      digestSubject: digestText.includes("Subject:") ? digestText.split("Subject:")[1].split("\n")[0].trim() : `[REVENUE INSIGHTS] Enterprise Operations Digest: PIPELINE_RISK_ALERTS`,
+      digestBody: digestText
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

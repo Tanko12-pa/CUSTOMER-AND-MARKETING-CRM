@@ -14,7 +14,12 @@ import {
   Trash2,
   CheckSquare,
   Square,
-  Filter
+  Filter,
+  Upload,
+  FileSpreadsheet,
+  AlertCircle,
+  X,
+  FileText
 } from "lucide-react";
 
 interface DatabaseExplorerProps {
@@ -36,6 +41,188 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
   const [sortBy, setSortBy] = useState<"dealRiskStatus" | "winProbability" | "none">("none");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [expandedUid, setExpandedUid] = useState<string | null>(null);
+
+  // Bulk CSV importing and client-side validation states
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [validatedRecords, setValidatedRecords] = useState<any[]>([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [isImportingInProgress, setIsImportingInProgress] = useState(false);
+
+  // File drag-and-drop handlers
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processCSVFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processCSVFile(e.target.files[0]);
+    }
+  };
+
+  const processCSVFile = (file: File) => {
+    setImportFileName(file.name);
+    setImportErrors([]);
+    setValidatedRecords([]);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) {
+        setImportErrors(["Could not read structured content from file."]);
+        return;
+      }
+      
+      const rawLines = text.split(/\r?\n/).map(l => l.trim());
+      if (rawLines.length === 0 || (rawLines.length === 1 && !rawLines[0])) {
+        setImportErrors(["CSV file appears to be completely empty."]);
+        return;
+      }
+
+      const headers = rawLines[0].split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
+      
+      // Look for positions of mandatory fields: name and email
+      const nameIdx = headers.findIndex(h => h.toLowerCase() === "name" || h.toLowerCase() === "fullname" || h.toLowerCase() === "client name");
+      const emailIdx = headers.findIndex(h => h.toLowerCase() === "email" || h.toLowerCase() === "corporate email" || h.toLowerCase() === "client email");
+
+      const errorsList: string[] = [];
+      if (nameIdx === -1) {
+        errorsList.push("Mandatory column header 'Name' is missing in CSV.");
+      }
+      if (emailIdx === -1) {
+        errorsList.push("Mandatory column header 'Email' is missing in CSV.");
+      }
+
+      if (errorsList.length > 0) {
+        setImportErrors(errorsList);
+        return;
+      }
+
+      const parsedRecords: any[] = [];
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      for (let i = 1; i < rawLines.length; i++) {
+        const line = rawLines[i];
+        if (!line) continue; // Skip blank lines safely
+
+        // Robust comma split taking quotes into account
+        const values: string[] = [];
+        let currentField = '';
+        let insideQuotes = false;
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            insideQuotes = !insideQuotes;
+          } else if (char === ',' && !insideQuotes) {
+            values.push(currentField.trim());
+            currentField = '';
+          } else {
+            currentField += char;
+          }
+        }
+        values.push(currentField.trim());
+
+        const nameVal = (values[nameIdx] || "").trim().replace(/^["']|["']$/g, "");
+        const emailVal = (values[emailIdx] || "").trim().replace(/^["']|["']$/g, "");
+
+        // Client-side validations
+        const fileLineNum = i + 1;
+        if (!nameVal) {
+          errorsList.push(`Line ${fileLineNum}: 'Name' is blank. Name is a mandatory field.`);
+          continue;
+        }
+        if (!emailVal) {
+          errorsList.push(`Line ${fileLineNum}: 'Email' is blank. Email is a mandatory field.`);
+          continue;
+        }
+        if (!emailPattern.test(emailVal)) {
+          errorsList.push(`Line ${fileLineNum}: '${emailVal}' is not a valid email address format.`);
+          continue;
+        }
+
+        // Optional indices
+        const stageIdx = headers.findIndex(h => h.toLowerCase().includes("stage") || h.toLowerCase().includes("lifecycle"));
+        const tierIdx = headers.findIndex(h => h.toLowerCase() === "tier");
+        const scoreIdx = headers.findIndex(h => h.toLowerCase().includes("score") || h.toLowerCase().includes("leadscore"));
+        const ltvIdx = headers.findIndex(h => h.toLowerCase().includes("ltv") || h.toLowerCase().includes("contract") || h.toLowerCase().includes("value") || h.toLowerCase().includes("lifetimevalue"));
+        const repIdx = headers.findIndex(h => h.toLowerCase().includes("rep") || h.toLowerCase().includes("owner") || h.toLowerCase().includes("agent"));
+        const sentimentIdx = headers.findIndex(h => h.toLowerCase() === "sentiment");
+
+        const parsedRecord = {
+          name: nameVal,
+          email: emailVal,
+          lifecycleStage: stageIdx !== -1 && values[stageIdx] ? values[stageIdx].replace(/^["']|["']$/g, "") : "Lead",
+          tier: tierIdx !== -1 && values[tierIdx] ? values[tierIdx].replace(/^["']|["']$/g, "") : "Free",
+          leadScore: scoreIdx !== -1 && !isNaN(Number(values[scoreIdx])) ? Number(values[scoreIdx]) : 60,
+          lifetimeValue: ltvIdx !== -1 && !isNaN(Number(values[ltvIdx])) ? Number(values[ltvIdx]) : 0,
+          sentiment: sentimentIdx !== -1 && values[sentimentIdx] ? values[sentimentIdx].replace(/^["']|["']$/g, "") : "Neutral",
+          lastInteractionDays: 1,
+          winProbability: 50,
+          assignedRep: repIdx !== -1 && values[repIdx] ? values[repIdx].replace(/^["']|["']$/g, "") : "Danielle Gold",
+          dealRiskStatus: "Low Risk",
+          createdAt: new Date().toISOString()
+        };
+
+        parsedRecords.push(parsedRecord);
+      }
+
+      if (errorsList.length > 0) {
+        setImportErrors(errorsList);
+      }
+
+      if (parsedRecords.length > 0) {
+        setValidatedRecords(parsedRecords);
+      }
+    };
+    
+    reader.readAsText(file);
+  };
+
+  const handleCommitImport = async () => {
+    if (validatedRecords.length === 0) return;
+    setIsImportingInProgress(true);
+    try {
+      await onUpdateState("BULK_ADD_CUSTOMERS", { records: validatedRecords });
+      setImportFileName("");
+      setValidatedRecords([]);
+      setImportErrors([]);
+      setShowBulkImport(false);
+    } catch (err: any) {
+      setImportErrors([`Import operation failed: ${err.message || err}`]);
+    } finally {
+      setIsImportingInProgress(false);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const templateStr = "Name,Email,Lifecycle Stage,Tier,Lead Score,LTV ($),Sentiment,Assigned Rep\nSarah Connor,s.connor@cyberdyne.com,Lead,Free,85,0,Positive,Danielle Gold\nJohn Connor,j.connor@cyberdyne.com,Customer,Enterprise,95,120000,Positive,Danielle Gold";
+    const blob = new Blob([templateStr], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "crm_customers_import_template.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Create user form
   const [frmName, setFrmName] = useState("");
@@ -606,97 +793,224 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
 
           {/* CREATE CUSTOMER DOCK */}
           <div className="lg:col-span-4 bg-[#0A0A0B] rounded-2xl p-4.5 border border-[#27272A] text-xs">
-            <div className="flex items-center space-x-2 text-[#C5A059] font-bold border-b border-[#27272A] pb-2 mb-3 uppercase tracking-wider text-[11px] font-display">
-              <UserPlus className="w-4 h-4 text-[#C5A059]" />
-              <span>Register Firestore Customer</span>
+            <div className="flex items-center justify-between border-b border-[#27272A] pb-2 mb-3">
+              <div className="flex items-center space-x-2 text-[#C5A059] font-bold uppercase tracking-wider text-[11px] font-display">
+                <UserPlus className="w-4 h-4 text-[#C5A059]" />
+                <span>{showBulkImport ? "Bulk CSV Importer" : "Register Customer"}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBulkImport(prev => !prev);
+                  setImportErrors([]);
+                  setValidatedRecords([]);
+                  setImportFileName("");
+                }}
+                className="px-2 py-1 text-[10px] font-bold tracking-wide uppercase bg-zinc-900 border border-zinc-800 hover:border-[#C5A059]/40 hover:text-[#C5A059] rounded text-zinc-400 transition-colors cursor-pointer font-mono"
+              >
+                {showBulkImport ? "Manual Form" : "Bulk Import CSV"}
+              </button>
             </div>
 
-            <form onSubmit={handleCreateCustomerSubmit} className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Full Client Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Sterling Thorne"
-                  value={frmName}
-                  onChange={(e) => setFrmName(e.target.value)}
-                  className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2.5 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Corporate Email</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. s.thorne@corp.com"
-                  value={frmEmail}
-                  onChange={(e) => setFrmEmail(e.target.value)}
-                  className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2.5 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+            {!showBulkImport ? (
+              <form onSubmit={handleCreateCustomerSubmit} className="space-y-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Category Status</label>
-                  <select
-                    value={frmStage}
-                    onChange={(e) => setFrmStage(e.target.value as any)}
-                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 focus:outline-none focus:border-[#C5A059] outline-none text-[#E4E4E7]"
-                  >
-                    <option value="Lead">Lead</option>
-                    <option value="MQL">MQL</option>
-                    <option value="SQL">SQL</option>
-                    <option value="Customer">Customer</option>
-                    <option value="Churned">Churned</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Active Tier</label>
-                  <select
-                    value={frmTier}
-                    onChange={(e) => setFrmTier(e.target.value as any)}
-                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 focus:outline-none focus:border-[#C5A059] outline-none text-[#E4E4E7]"
-                  >
-                    <option value="Free">Free</option>
-                    <option value="Premium">Premium</option>
-                    <option value="Enterprise">Enterprise</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Lead Score (0-100)</label>
+                  <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Full Client Name</label>
                   <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={frmScore}
-                    onChange={(e) => setFrmScore(Number(e.target.value))}
-                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
+                    type="text"
+                    required
+                    placeholder="e.g. Sterling Thorne"
+                    value={frmName}
+                    onChange={(e) => setFrmName(e.target.value)}
+                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2.5 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Initial Contract ($)</label>
+                  <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Corporate Email</label>
                   <input
-                    type="number"
-                    value={frmLTV}
-                    onChange={(e) => setFrmLTV(Number(e.target.value))}
-                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
+                    type="email"
+                    required
+                    placeholder="e.g. s.thorne@corp.com"
+                    value={frmEmail}
+                    onChange={(e) => setFrmEmail(e.target.value)}
+                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2.5 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
                   />
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                className="w-full bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] font-bold text-xs py-2.5 rounded-xl transition-all shadow-md cursor-pointer mt-1"
-              >
-                Insert Firestore Record
-              </button>
-            </form>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Category Status</label>
+                    <select
+                      value={frmStage}
+                      onChange={(e) => setFrmStage(e.target.value as any)}
+                      className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 focus:outline-none focus:border-[#C5A059] outline-none text-[#E4E4E7]"
+                    >
+                      <option value="Lead">Lead</option>
+                      <option value="MQL">MQL</option>
+                      <option value="SQL">SQL</option>
+                      <option value="Customer">Customer</option>
+                      <option value="Churned">Churned</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Active Tier</label>
+                    <select
+                      value={frmTier}
+                      onChange={(e) => setFrmTier(e.target.value as any)}
+                      className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 focus:outline-none focus:border-[#C5A059] outline-none text-[#E4E4E7]"
+                    >
+                      <option value="Free">Free</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Enterprise">Enterprise</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Lead Score (0-100)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={frmScore}
+                      onChange={(e) => setFrmScore(Number(e.target.value))}
+                      className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 leading-none font-sans">Initial Contract ($)</label>
+                    <input
+                      type="number"
+                      value={frmLTV}
+                      onChange={(e) => setFrmLTV(Number(e.target.value))}
+                      className="w-full bg-[#141416] border border-[#27272A] rounded-xl p-2 text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] font-bold text-xs py-2.5 rounded-xl transition-all shadow-md cursor-pointer mt-1"
+                >
+                  Insert Firestore Record
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-[11px] text-[#A1A1AA] leading-relaxed">
+                  Bulk upload multiple client profiles simultaneously. Required headers are <strong className="text-white">Name</strong> and <strong className="text-white">Email</strong>. Values get validated locally before compilation.
+                </p>
+
+                {/* DRAG AND DROP ZONE */}
+                <div
+                  onDragEnter={handleDrag}
+                  onDragOver={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDrop={handleDrop}
+                  onClick={() => {
+                    const fileInput = document.getElementById("csv-file-browse-trigger");
+                    if (fileInput) fileInput.click();
+                  }}
+                  className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
+                    dragActive 
+                      ? "border-[#C5A059] bg-[#C5A059]/5 scale-[0.99]" 
+                      : importFileName 
+                        ? "border-emerald-500/50 bg-emerald-950/5" 
+                        : "border-[#27272A] hover:border-zinc-700 bg-black/30"
+                  }`}
+                >
+                  <input
+                    id="csv-file-browse-trigger"
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  
+                  {importFileName ? (
+                    <div className="space-y-2">
+                      <FileSpreadsheet className="w-8 h-8 text-emerald-400 mx-auto" />
+                      <div>
+                        <span className="text-xs text-white block truncate max-w-[200px] mx-auto font-mono font-bold">{importFileName}</span>
+                        <span className="text-[10px] text-zinc-500 block">Click or drop another file to replace</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      <Upload className="w-8 h-8 text-[#C5A059] mx-auto" />
+                      <div>
+                        <span className="text-xs text-[#E4E4E7] block font-semibold">Drag & drop CSV file here</span>
+                        <span className="text-[10px] text-zinc-500 block mt-0.5">or click to browse local folders</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* TEMPLATE DOWNLOADA TRIGGER */}
+                <div className="flex items-center justify-between text-[11px] bg-[#141416]/50 p-2.5 rounded-lg border border-[#27272A]">
+                  <span className="text-zinc-400 font-mono">Reference Format Layout:</span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    className="text-[#C5A059] hover:underline font-bold text-[10px] uppercase font-mono cursor-pointer"
+                  >
+                    📥 Template.csv
+                  </button>
+                </div>
+
+                {/* LOCAL CLIENT VALIDATION SUMMARY OUTLET */}
+                {importErrors.length > 0 && (
+                  <div className="bg-red-950/30 border border-red-900/40 rounded-xl p-3 space-y-2">
+                    <span className="text-[10px] text-red-450 uppercase font-mono tracking-wider font-bold block flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-450 shrink-0" /> Validation issues detected ({importErrors.length})
+                    </span>
+                    <ul className="text-[10.5px] text-zinc-400 font-mono space-y-1 list-disc list-inside max-h-[85px] overflow-y-auto leading-normal">
+                      {importErrors.slice(0, 5).map((err, idx) => (
+                        <li key={idx} className="truncate" title={err}>{err}</li>
+                      ))}
+                      {importErrors.length > 5 && (
+                        <li className="text-[9.5px] italic text-zinc-500 font-sans list-none pt-0.5">...and {importErrors.length - 5} additional structured format flags.</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                {validatedRecords.length > 0 && importErrors.length === 0 && (
+                  <div className="bg-emerald-950/25 border border-emerald-900/40 rounded-xl p-3 text-center space-y-2.5">
+                    <span className="text-xs text-emerald-400 font-bold block">
+                      ✓ local validation cleared successfully!
+                    </span>
+                    <span className="text-[11px] text-zinc-300 block font-mono">
+                      Prepared <strong className="text-white font-sans">{validatedRecords.length}</strong> user profiles for database entry.
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={handleCommitImport}
+                      disabled={isImportingInProgress}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl transition-all shadow cursor-pointer disabled:opacity-50"
+                    >
+                      {isImportingInProgress ? "Writing to Firestore..." : `Commit Import to Firestore`}
+                    </button>
+                  </div>
+                )}
+
+                {validatedRecords.length > 0 && importErrors.length > 0 && (
+                  <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-3 text-center space-y-2.5">
+                    <span className="text-xs text-amber-500 font-bold block">
+                      ⚠️ Partial validation: {validatedRecords.length} profiles valid
+                    </span>
+                    <span className="text-[10.5px] text-zinc-400 block leading-relaxed">
+                      Please rectify the syntax alerts above in your CSV file to complete bulk sync securely.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
