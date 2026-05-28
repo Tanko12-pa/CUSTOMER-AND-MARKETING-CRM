@@ -36,6 +36,77 @@ export function AudioTranscriber({ onUpdateState, customers }: AudioTranscriberP
   const [transcriptionResult, setTranscriptionResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [playingVoice, setPlayingVoice] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingProgress, setRecordingProgress] = useState("");
+
+  const handleToggleRecording = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Microphone recognition is not fully supported in this sandboxed frame browser environment. Please try in a new tab.");
+      return;
+    }
+
+    if (isRecording) {
+      if ((window as any)._activeRecognition) {
+        try {
+          (window as any)._activeRecognition.stop();
+        } catch (e) {}
+      }
+      setIsRecording(false);
+      setRecordingProgress("");
+    } else {
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        
+        const localeMap: Record<string, string> = {
+          Spanish: "es-ES",
+          French: "fr-FR",
+          English: "en-US",
+          Yoruba: "yo-NG"
+        };
+        rec.lang = localeMap[selectedLanguage] || "en-US";
+
+        rec.onstart = () => {
+          setIsRecording(true);
+          setRecordingProgress("🎙️ Speak now! Translating live to audio-module input...");
+        };
+
+        rec.onerror = (e: any) => {
+          console.error(e);
+          setRecordingProgress(`Error: ${e.error || "failed configuration"}`);
+          setIsRecording(false);
+        };
+
+        rec.onend = () => {
+          setIsRecording(false);
+        };
+
+        rec.onresult = (evt: any) => {
+          let interimTrans = "";
+          let finalTrans = "";
+          for (let i = evt.resultIndex; i < evt.results.length; ++i) {
+            if (evt.results[i].isFinal) {
+              finalTrans += evt.results[i][0].transcript;
+            } else {
+              interimTrans += evt.results[i][0].transcript;
+            }
+          }
+          const capturedHTMLValue = finalTrans || interimTrans;
+          if (capturedHTMLValue) {
+            setCustomPrompt(capturedHTMLValue);
+          }
+        };
+
+        rec.start();
+        (window as any)._activeRecognition = rec;
+      } catch (err) {
+        console.error(err);
+        setRecordingProgress("Microphone permission blocked or access failed.");
+      }
+    }
+  };
 
   const handleSelectPreset = (preset: typeof SAMPLE_VOICE_PRESETS[0]) => {
     setSelectedLanguage(preset.lang);
@@ -163,26 +234,45 @@ export function AudioTranscriber({ onUpdateState, customers }: AudioTranscriberP
                 onChange={(e) => setCustomPrompt(e.target.value)}
                 className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-xl p-3 text-xs text-[#E4E4E7] focus:border-[#C5A059] focus:outline-none font-sans"
               />
+              {recordingProgress && (
+                <p className="text-[10px] text-amber-500 font-mono mt-1 animate-pulse">
+                  {recordingProgress}
+                </p>
+              )}
             </div>
 
-            <div className="flex items-center justify-between gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={handleToggleRecording}
+                className={`py-2 px-3 border rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                  isRecording 
+                    ? "bg-red-950/50 border-red-500 text-red-500 animate-pulse font-extrabold" 
+                    : "bg-[#0A0A0B] border-red-900/40 text-red-400/80 hover:bg-red-950/20"
+                }`}
+                id="mic-live-recorder-btn"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>{isRecording ? "Stop mic..." : "Live Microphone"}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleSimulatePlayback}
-                className={`py-2 px-3.5 border border-[#A1A1AA]/55 text-[#E4E4E7] hover:bg-white/5 rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-all cursor-pointer ${playingVoice ? "animate-pulse" : ""}`}
+                className={`py-2 px-3 border border-[#A1A1AA]/55 text-[#E4E4E7] hover:bg-white/5 rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${playingVoice ? "animate-pulse" : ""}`}
               >
-                <Mic className="w-3.5 h-3.5" />
-                <span>{playingVoice ? "🎙️ Playing Audio..." : "Play Voice Source"}</span>
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>{playingVoice ? "Playing Output" : "Play Sample"}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleTranscribe}
                 disabled={loading}
-                className="bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] text-xs font-bold py-2.5 px-4 rounded-xl flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                className="bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center space-x-1.5 transition-all shadow-md cursor-pointer font-sans"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#0A0A0B]" />
-                <span>Transcribe Sound & Log</span>
+                <span>Transcribe & Log</span>
               </button>
             </div>
           </div>

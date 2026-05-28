@@ -108,8 +108,18 @@ export function KPICards({ customers, campaigns, tickets }: KPICardsProps) {
           <span className="text-3xl font-bold font-display text-red-400 tracking-tight">
             {atRiskCount}
           </span>
-          <span className="text-xs text-red-400 font-medium bg-red-950/50 border border-red-900/40 px-1.5 py-0.5 rounded ml-2">CRITICAL</span>
+          <span className="text-xs text-red-400 font-medium bg-red-950/50 border border-red-900/40 px-1.5 py-0.5 rounded ml-2 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+            CRITICAL
+          </span>
         </div>
+
+        {/* Animated churn risk velocity trend indicator */}
+        <div className="mt-2.5 flex items-center space-x-2 bg-red-950/20 border border-red-900/30 rounded-xl p-2 animate-pulse" id="at-risk-trend-velocity-indicator">
+          <TrendingUp className="w-3.5 h-3.5 text-red-400 animate-bounce" />
+          <span className="text-[10px] font-bold text-red-300 font-mono tracking-tight">Escalation Velocity: +14.8% / hr</span>
+        </div>
+
         <p className="text-[10px] text-[#A1A1AA]/60 mt-2 font-mono">Negative CRM Sentiments</p>
       </div>
     </div>

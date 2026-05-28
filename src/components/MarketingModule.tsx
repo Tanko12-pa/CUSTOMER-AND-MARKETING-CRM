@@ -19,6 +19,16 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
   const [genLoading, setGenLoading] = useState(false);
   const [useSearch, setUseSearch] = useState(false);
 
+  // Custom multi-assets campaign copywriter states
+  const [structuredCampaign, setStructuredCampaign] = useState<{
+    subjectLine: string;
+    blastHtml: string;
+    smsPush: string;
+    socialCopy: string;
+    rationale: string;
+  } | null>(null);
+  const [activeAssetTab, setActiveAssetTab] = useState<"email" | "sms" | "social" | "rationale">("email");
+
   const handleAddCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -40,17 +50,28 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
     if (!promptToUse.trim()) return;
     setGenLoading(true);
     try {
-      const response = await fetch("/api/gemini/chat", {
+      const response = await fetch("/api/gemini/campaign-builder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: promptToUse,
-          mode: "marketing",
-          useSearch: useSearch
+          theme: promptToUse,
+          segment: newSegment
         })
       });
       const data = await response.json();
-      setGeneratedResult(data.text);
+      if (data.subjectLine) {
+        setStructuredCampaign({
+          subjectLine: data.subjectLine,
+          blastHtml: data.blastHtml,
+          smsPush: data.smsPush,
+          socialCopy: data.socialCopy,
+          rationale: data.rationale
+        });
+        setGeneratedResult(data.blastHtml);
+      } else {
+        setGeneratedResult(data.text || "No copy generated.");
+        setStructuredCampaign(null);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -272,11 +293,72 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
               <span>{genLoading ? "Co-writing Copy..." : "Craft Multilingual Copy Assets"}</span>
             </button>
 
-            {generatedResult && (
+            {structuredCampaign ? (
+              <div className="mt-4 border border-[#27272A] rounded-2xl overflow-hidden bg-[#0A0A0B] shadow-xl animate-fade-in font-sans">
+                {/* Subject Header */}
+                <div className="p-3 bg-[#141416] border-b border-[#27272A] text-xs font-mono text-white flex flex-col gap-1">
+                  <span className="text-[#A1A1AA] text-[9px] uppercase tracking-wider block">Generated Campaign Subject</span>
+                  <span className="font-bold text-[#C5A059] font-sans">"{structuredCampaign.subjectLine}"</span>
+                </div>
+
+                {/* Sub Asset Tabs */}
+                <div className="flex bg-[#141416]/55 border-b border-[#27272A] p-1 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAssetTab("email")}
+                    className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                      activeAssetTab === "email" ? "bg-zinc-850 text-[#C5A059] border border-zinc-700" : "text-[#A1A1AA] hover:text-white"
+                    }`}
+                  >
+                    ✉️ Email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAssetTab("sms")}
+                    className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                      activeAssetTab === "sms" ? "bg-zinc-850 text-[#C5A059] border border-zinc-700" : "text-[#A1A1AA] hover:text-white"
+                    }`}
+                  >
+                    💬 SMS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAssetTab("social")}
+                    className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                      activeAssetTab === "social" ? "bg-zinc-850 text-[#C5A059] border border-zinc-700" : "text-[#A1A1AA] hover:text-white"
+                    }`}
+                  >
+                    📢 Social
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAssetTab("rationale")}
+                    className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                      activeAssetTab === "rationale" ? "bg-zinc-850 text-[#C5A059] border border-zinc-700" : "text-[#A1A1AA] hover:text-white"
+                    }`}
+                  >
+                    🎯 Strategy
+                  </button>
+                </div>
+
+                {/* Tab content view */}
+                <div className="p-4 text-xs font-mono text-[#E4E4E7] leading-relaxed max-h-[220px] overflow-y-auto whitespace-pre-wrap select-all bg-[#0A0A0B]/50">
+                  {activeAssetTab === "email" && structuredCampaign.blastHtml}
+                  {activeAssetTab === "sms" && structuredCampaign.smsPush}
+                  {activeAssetTab === "social" && structuredCampaign.socialCopy}
+                  {activeAssetTab === "rationale" && (
+                    <div className="font-sans text-xs text-zinc-300 space-y-2">
+                      <p className="font-bold text-[#C5A059] uppercase text-[10px] font-mono tracking-wider">AI Rationale & Targeting Strategy</p>
+                      <p className="leading-relaxed font-sans">{structuredCampaign.rationale}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : generatedResult ? (
               <div className="mt-4 border border-[#27272A] rounded-xl bg-[#0A0A0B] p-4 font-mono text-xs text-[#E4E4E7] max-h-[200px] overflow-y-auto leading-relaxed whitespace-pre-wrap select-all">
                 {generatedResult}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

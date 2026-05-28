@@ -49,6 +49,7 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
   const [validatedRecords, setValidatedRecords] = useState<any[]>([]);
   const [importFileName, setImportFileName] = useState("");
   const [isImportingInProgress, setIsImportingInProgress] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   // File drag-and-drop handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -384,12 +385,15 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
     document.body.removeChild(link);
   };
 
-  const handleBulkDelete = async () => {
+  const handleOpenBulkDeleteConfirm = () => {
     if (selectedUids.length === 0) return;
-    if (window.confirm(`Are you sure you want to delete ${selectedUids.length} selected client profile(s)? This action is irreversible.`)) {
-      await onUpdateState("DELETE_CUSTOMERS", { uids: selectedUids });
-      setSelectedUids([]);
-    }
+    setShowBulkDeleteConfirm(true);
+  };
+
+  const handleBulkDelete = async () => {
+    await onUpdateState("DELETE_CUSTOMERS", { uids: selectedUids });
+    setSelectedUids([]);
+    setShowBulkDeleteConfirm(false);
   };
 
   const handleToggleSelect = (uid: string) => {
@@ -435,7 +439,43 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
   };
 
   return (
-    <div className="bg-[#141416] rounded-2xl p-6 shadow-xl border border-[#27272A]" id="firestore-virtual-explorer">
+    <div className="bg-[#141416] rounded-2xl p-6 shadow-xl border border-[#27272A] relative" id="firestore-virtual-explorer">
+      {showBulkDeleteConfirm && (
+        <div className="absolute inset-0 bg-[#0A0A0B]/95 backdrop-blur-sm z-50 rounded-2xl flex items-center justify-center p-6 animate-fade-in" id="bulk-delete-confirm-overlay">
+          <div className="bg-[#141416] border border-red-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-center space-y-4">
+            <div className="p-3 bg-red-950/30 text-red-400 rounded-full border border-red-900/30">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-white uppercase tracking-wider font-mono">Confirm Bulk Deletion</h4>
+              <p className="text-xs text-[#A1A1AA] mt-1.5 leading-relaxed font-sans">
+                You are about to permanently delete <strong className="text-red-400 font-mono text-sm px-1.5 py-0.5 bg-red-950/40 rounded border border-red-900/20">{selectedUids.length}</strong> client record(s) from the Cloud Firestore NoSQL collections.
+              </p>
+              <p className="text-[11px] text-red-400/80 mt-1.5 font-bold font-mono">
+                🚨 WARNING: This administrative action is irreversible!
+              </p>
+            </div>
+            <div className="flex items-center space-x-3 w-full pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                className="flex-1 py-2 px-4 rounded-xl border border-[#27272A] bg-[#0A0A0B] hover:bg-white/5 text-xs font-bold text-[#E4E4E7] transition-all cursor-pointer"
+              >
+                Cancel Action
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="flex-1 py-2 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                id="do-confirm-bulk-delete-btn"
+              >
+                Confirm Delete!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between border-b border-[#27272A] pb-4 mb-5 gap-3">
         <div className="flex items-center space-x-2.5">
           <Database className="w-5 h-5 text-[#C5A059]" />
@@ -593,7 +633,7 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
 
                     {selectedUids.length > 0 && (
                       <button
-                        onClick={handleBulkDelete}
+                        onClick={handleOpenBulkDeleteConfirm}
                         className="flex items-center space-x-1 px-2 py-0.5 rounded bg-red-950/45 text-red-400 border border-red-900/50 hover:bg-red-900/30 transition-all font-bold text-[10px]"
                         type="button"
                       >

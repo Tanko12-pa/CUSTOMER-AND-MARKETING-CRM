@@ -33,6 +33,7 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
   const [dealValue, setDealValue] = useState<number>(55000);
   const [lastInteraction, setLastInteraction] = useState<number>(5);
   const [runLoading, setRunLoading] = useState(false);
+  const [active360Tab, setActive360Tab] = useState<"profile" | "summarize" | "score" | "churn">("profile");
 
   // Daily briefing and digest states
   const [digestLoading, setDigestLoading] = useState(false);
@@ -144,6 +145,66 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
 
   // Add Note state
   const [newNoteText, setNewNoteText] = useState("");
+
+  // Customer 360 AI-powered states
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [summaryLoading, setSummaryLoading] = useState<Record<string, boolean>>({});
+  const [leadScores, setLeadScores] = useState<Record<string, { rating: string; rationale: string }>>({});
+  const [leadScoreLoading, setLeadScoreLoading] = useState<Record<string, boolean>>({});
+  const [churnRisks, setChurnRisks] = useState<Record<string, { atRisk: boolean; rationale: string }>>({});
+  const [churnRiskLoading, setChurnRiskLoading] = useState<Record<string, boolean>>({});
+
+  const handleGenerateSummary = async (uid: string) => {
+    setSummaryLoading(prev => ({ ...prev, [uid]: true }));
+    try {
+      const response = await fetch("/api/gemini/summarize-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid })
+      });
+      const data = await response.json();
+      setSummaries(prev => ({ ...prev, [uid]: data.summary }));
+    } catch (err) {
+      console.error(err);
+      setSummaries(prev => ({ ...prev, [uid]: "Failed to generate summary. Verify connection." }));
+    } finally {
+      setSummaryLoading(prev => ({ ...prev, [uid]: false }));
+    }
+  };
+
+  const handleGenerateLeadScore = async (uid: string) => {
+    setLeadScoreLoading(prev => ({ ...prev, [uid]: true }));
+    try {
+      const response = await fetch("/api/gemini/score-lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid })
+      });
+      const data = await response.json();
+      setLeadScores(prev => ({ ...prev, [uid]: { rating: data.rating, rationale: data.rationale } }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLeadScoreLoading(prev => ({ ...prev, [uid]: false }));
+    }
+  };
+
+  const handleGenerateChurnRisk = async (uid: string) => {
+    setChurnRiskLoading(prev => ({ ...prev, [uid]: true }));
+    try {
+      const response = await fetch("/api/gemini/detect-churn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid })
+      });
+      const data = await response.json();
+      setChurnRisks(prev => ({ ...prev, [uid]: { atRisk: data.atRisk, rationale: data.rationale } }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setChurnRiskLoading(prev => ({ ...prev, [uid]: false }));
+    }
+  };
 
   // Filter customers by selected quick-filter criteria
   const filteredCustomers = useMemo(() => {
@@ -959,6 +1020,255 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
                       <span>7d ago</span>
                       <span>Today</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* DYNAMIC CUSTOMER 360 INTELLIGENCE HUB */}
+                <div className="pt-3.5 border-t border-[#27272A]/70 space-y-3" id="customer-360-hub">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-[#C5A059] uppercase tracking-wider font-mono font-bold flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Customer 360 Profile & AI Analyst
+                    </span>
+                    <span className="text-[8px] font-mono bg-[#A08852]/10 border border-[#A08852]/25 px-1.5 py-0.2 rounded text-[#C5A059] uppercase font-bold">Consolidated Hub</span>
+                  </div>
+
+                  {/* MINI SEGMENTED CONTROL TABS */}
+                  <div className="grid grid-cols-4 gap-1 bg-[#141416] p-1 rounded-lg border border-[#27272A]">
+                    <button
+                      type="button"
+                      onClick={() => setActive360Tab("profile")}
+                      className={`py-1 text-[8px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${active360Tab === "profile" ? "bg-[#C5A059] text-[#0A0A0B]" : "text-[#A1A1AA] hover:text-white"}`}
+                    >
+                      360 Profile
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActive360Tab("summarize");
+                        if (!summaries[activeCustomer.uid]) handleGenerateSummary(activeCustomer.uid);
+                      }}
+                      className={`py-1 text-[8px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${active360Tab === "summarize" ? "bg-[#C5A059] text-[#0A0A0B]" : "text-[#A1A1AA] hover:text-white"}`}
+                    >
+                      AI Summary
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActive360Tab("score");
+                        if (!leadScores[activeCustomer.uid]) handleGenerateLeadScore(activeCustomer.uid);
+                      }}
+                      className={`py-1 text-[8px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${active360Tab === "score" ? "bg-[#C5A059] text-[#0A0A0B]" : "text-[#A1A1AA] hover:text-white"}`}
+                    >
+                      AI Lead Score
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActive360Tab("churn");
+                        if (!churnRisks[activeCustomer.uid]) handleGenerateChurnRisk(activeCustomer.uid);
+                      }}
+                      className={`py-1 text-[8px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${active360Tab === "churn" ? "bg-[#C5A059] text-[#0A0A0B]" : "text-[#A1A1AA] hover:text-white"}`}
+                    >
+                      Churn Sentinel
+                    </button>
+                  </div>
+
+                  {/* 360 TAB CONTENTS */}
+                  <div className="bg-[#141416] p-3 rounded-xl border border-[#27272A] space-y-2.5 min-h-[140px]">
+                    {active360Tab === "profile" && (
+                      <div className="space-y-2.5 text-xs animate-fade-in font-sans">
+                        {/* Account Specs */}
+                        <div className="grid grid-cols-2 gap-2 text-[11px] border-b border-[#27272A]/40 pb-2">
+                          <div>
+                            <span className="text-[#A1A1AA] block uppercase text-[8px] font-mono">Company</span>
+                            <span className="text-[#E4E4E7] font-semibold">{activeCustomer.contact?.company || activeCustomer.name}</span>
+                          </div>
+                          <div>
+                            <span className="text-[#A1A1AA] block uppercase text-[8px] font-mono">Industry</span>
+                            <span className="text-[#E4E4E7] font-medium">{activeCustomer.account?.industry || "Enterprise SaaS"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[#A1A1AA] block uppercase text-[8px] font-mono font-bold">Region & Scale</span>
+                            <span className="text-[#E4E4E7] font-medium">{activeCustomer.account?.region || "Americas"} • {activeCustomer.account?.size || "Mid-Market"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[#A1A1AA] block uppercase text-[8px] font-mono font-bold">Contact Role / Phone</span>
+                            <span className="text-[#E4E4E7] font-medium block truncate">{activeCustomer.contact?.role || "VP"}</span>
+                            <span className="text-[#E4E4E7] font-mono font-medium">{activeCustomer.contact?.phone || "+1-555"}</span>
+                          </div>
+                        </div>
+
+                        {/* Consents */}
+                        <div className="flex items-center gap-3 border-b border-[#27272A]/40 pb-2 text-[10px] font-mono">
+                          <span className="text-[#A1A1AA] uppercase text-[8px]">Consent:</span>
+                          <span className="flex items-center gap-1 font-bold">
+                            <span className={`w-1.5 h-1.5 rounded-full ${activeCustomer.contact?.marketingConsent ? "bg-emerald-400" : "bg-red-400"}`} />
+                            Marketing {activeCustomer.contact?.marketingConsent ? "YES" : "NO"}
+                          </span>
+                          <span className="flex items-center gap-1 font-bold">
+                            <span className={`w-1.5 h-1.5 rounded-full ${activeCustomer.contact?.trackingConsent ? "bg-emerald-400" : "bg-red-400"}`} />
+                            Telemetry {activeCustomer.contact?.trackingConsent ? "YES" : "NO"}
+                          </span>
+                        </div>
+
+                        {/* Recent Interactions list */}
+                        <div className="space-y-1">
+                          <span className="text-[#A1A1AA] block uppercase text-[8px] font-mono font-bold mb-1">Recent logs</span>
+                          {activeCustomer.interactions?.length ? (
+                            <div className="space-y-1.5 max-h-[80px] overflow-y-auto">
+                              {activeCustomer.interactions.map((inter, idx) => (
+                                <div key={idx} className="bg-[#0A0A0B] p-2 rounded border border-[#27272A]/50 text-[10px] leading-relaxed">
+                                  <div className="flex items-center justify-between text-[8px] font-mono text-[#A1A1AA] mb-0.5">
+                                    <span>{inter.channel} ({inter.agentOrBot})</span>
+                                    <span className={`${inter.sentiment === "Negative" ? "text-red-400 font-bold" : "text-emerald-400"}`}>
+                                      {inter.sentiment || "Positive"}
+                                    </span>
+                                  </div>
+                                  <p className="text-zinc-300 font-sans text-[10px]">{inter.summary}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-[#71717A] italic block font-sans">No logs registered.</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {active360Tab === "summarize" && (
+                      <div className="space-y-2 animate-fade-in font-sans">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-mono font-bold block">30-Day Auto-Summarization</span>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateSummary(activeCustomer.uid)}
+                            disabled={summaryLoading[activeCustomer.uid]}
+                            className="text-[9px] font-mono text-[#C5A059] hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-2.5 h-2.5 ${summaryLoading[activeCustomer.uid] ? "animate-spin" : ""}`} />
+                            Refit
+                          </button>
+                        </div>
+                        {summaryLoading[activeCustomer.uid] ? (
+                          <div className="flex flex-col items-center justify-center p-4 space-y-2">
+                            <span className="w-5 h-5 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-[10px] font-mono text-[#71717A]">Gemini summarizing chats...</span>
+                          </div>
+                        ) : summaries[activeCustomer.uid] ? (
+                          <div className="bg-[#0A0A0B]/80 text-[#E4E4E7] text-[11px] font-mono p-2 rounded border border-[#27272A] whitespace-pre-line leading-relaxed max-h-[120px] overflow-y-auto">
+                            {summaries[activeCustomer.uid]}
+                          </div>
+                        ) : (
+                          <div className="text-center p-4">
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateSummary(activeCustomer.uid)}
+                              className="px-3 py-1.5 bg-[#C5A059] text-[#0A0A0B] rounded-lg text-xs font-bold uppercase font-mono tracking-wider hover:bg-[#C5A059]/90 cursor-pointer"
+                            >
+                              Initialize summary
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {active360Tab === "score" && (
+                      <div className="space-y-2 animate-fade-in font-sans">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-mono font-bold block">Qual banker score rationale</span>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateLeadScore(activeCustomer.uid)}
+                            disabled={leadScoreLoading[activeCustomer.uid]}
+                            className="text-[9px] font-mono text-[#C5A059] hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-2.5 h-2.5 ${leadScoreLoading[activeCustomer.uid] ? "animate-spin" : ""}`} />
+                            Re-Audit
+                          </button>
+                        </div>
+                        {leadScoreLoading[activeCustomer.uid] ? (
+                          <div className="flex flex-col items-center justify-center p-4 space-y-2">
+                            <span className="w-5 h-5 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-[10px] font-mono text-[#71717A]">Gemini modeling firmographic score...</span>
+                          </div>
+                        ) : leadScores[activeCustomer.uid] ? (
+                          <div className="space-y-2 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[#A1A1AA] font-sans">Rank:</span>
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded text-[10px] tracking-wide uppercase ${
+                                leadScores[activeCustomer.uid].rating === "High" ? "bg-emerald-950 text-emerald-400 border border-emerald-900" :
+                                leadScores[activeCustomer.uid].rating === "Medium" ? "bg-amber-950 text-amber-400 border border-amber-900" :
+                                "bg-red-950 text-red-400 border border-red-900"
+                              }`}>
+                                {leadScores[activeCustomer.uid].rating} Rating
+                              </span>
+                            </div>
+                            <div className="bg-[#0A0A0B]/80 text-zinc-300 p-2 rounded border border-[#27272A] font-sans text-[11px] leading-relaxed max-h-[100px] overflow-y-auto">
+                              <strong className="block text-[8px] font-mono text-[#C5A059] uppercase tracking-wider mb-1">Corporate Banker Rationale</strong>
+                              {leadScores[activeCustomer.uid].rationale}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center p-4">
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateLeadScore(activeCustomer.uid)}
+                              className="px-3 py-1.5 bg-[#C5A059] text-[#0A0A0B] rounded-lg text-xs font-bold uppercase font-mono tracking-wider hover:bg-[#C5A059]/90 cursor-pointer"
+                            >
+                              Audit credentials
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {active360Tab === "churn" && (
+                      <div className="space-y-2 animate-fade-in font-sans">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-mono font-bold block">CX Loyalty sentinel scanning</span>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateChurnRisk(activeCustomer.uid)}
+                            disabled={churnRiskLoading[activeCustomer.uid]}
+                            className="text-[9px] font-mono text-[#C5A059] hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-2.5 h-2.5 ${churnRiskLoading[activeCustomer.uid] ? "animate-spin" : ""}`} />
+                            Rescan
+                          </button>
+                        </div>
+                        {churnRiskLoading[activeCustomer.uid] ? (
+                          <div className="flex flex-col items-center justify-center p-4 space-y-2">
+                            <span className="w-5 h-5 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-[10px] font-mono text-[#71717A]">Gemini scanning support tickets...</span>
+                          </div>
+                        ) : churnRisks[activeCustomer.uid] ? (
+                          <div className="space-y-2 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[#A1A1AA] font-sans">Anomaly risk state:</span>
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded text-[10px] tracking-wide uppercase ${
+                                churnRisks[activeCustomer.uid].atRisk ? "bg-red-950 text-red-400 border border-red-900 animate-pulse" : "bg-emerald-950 text-emerald-400 border border-emerald-900"
+                              }`}>
+                                {churnRisks[activeCustomer.uid].atRisk ? "AT RISK THREAT" : "STABLE COMPLIANCE"}
+                              </span>
+                            </div>
+                            <div className="bg-[#0A0A0B]/80 text-zinc-300 p-2 rounded border border-[#27272A] font-sans text-[11px] leading-relaxed max-h-[100px] overflow-y-auto">
+                              <strong className="block text-[8px] font-mono text-red-400 uppercase tracking-wider mb-1">Sentinel Verification Rationale</strong>
+                              {churnRisks[activeCustomer.uid].rationale}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center p-4">
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateChurnRisk(activeCustomer.uid)}
+                              className="px-3 py-1.5 bg-[#C5A059] text-[#0A0A0B] rounded-lg text-xs font-bold uppercase font-mono tracking-wider hover:bg-[#C5A059]/90 cursor-pointer"
+                            >
+                              Scan Risk Parameters
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

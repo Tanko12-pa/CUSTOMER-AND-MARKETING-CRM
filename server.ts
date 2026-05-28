@@ -3,7 +3,7 @@ import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import Stripe from "stripe";
 import fs from "fs";
 import { initializeApp } from "firebase/app";
@@ -117,7 +117,31 @@ let mockCustomers: any[] = [
       { month: "Mar", ltv: 100000 },
       { month: "Apr", ltv: 115000 },
       { month: "May", ltv: 125000 }
-    ]
+    ],
+    contact: {
+      phone: "+1 (415) 888-2931",
+      company: "Vance Aerospace",
+      role: "VP of Engineering",
+      marketingConsent: true,
+      trackingConsent: true
+    },
+    account: {
+      company: "Vance Aerospace",
+      industry: "Aerospace & Defense",
+      size: "Enterprise (5000+ employees)",
+      region: "Americas (North America)"
+    },
+    interactions: [
+      { id: "int_1", channel: "Email", timestamp: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Danielle Gold", sentiment: "Positive" as const, summary: "Reviewed proposal for seat license upgrade. Expecting approval." },
+      { id: "int_2", channel: "Web Form", timestamp: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString(), agentOrBot: "System", sentiment: "Positive" as const, summary: "Consent verified for tracking and product marketing automation." },
+      { id: "int_3", channel: "Call", timestamp: new Date(Date.now() - 18 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Danielle Gold", sentiment: "Neutral" as const, summary: "Annual sync regarding security compliance checklist. All green." }
+    ],
+    opportunity: {
+      stage: "Contract Negotiation",
+      value: 125000,
+      probability: 95,
+      expectedCloseDate: "2026-06-15"
+    }
   },
   {
     uid: "cust_2",
@@ -140,7 +164,30 @@ let mockCustomers: any[] = [
       { month: "Mar", ltv: 32000 },
       { month: "Apr", ltv: 38000 },
       { month: "May", ltv: 45000 }
-    ]
+    ],
+    contact: {
+      phone: "+1 (617) 555-0812",
+      company: "Aurora Labs",
+      role: "Director of Product Security",
+      marketingConsent: true,
+      trackingConsent: false
+    },
+    account: {
+      company: "Aurora Labs",
+      industry: "Biotech & Genomics",
+      size: "Mid-Market (500-1000 employees)",
+      region: "Americas (East Coast)"
+    },
+    interactions: [
+      { id: "int_4", channel: "Support Chat", timestamp: new Date(Date.now() - 16 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Support Bot", sentiment: "Neutral" as const, summary: "Inquired about GDPR compliance paperwork and data sovereignty options." },
+      { id: "int_5", channel: "Email", timestamp: new Date(Date.now() - 22 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Danielle Gold", sentiment: "Positive" as const, summary: "Introductory demo session completed. Requested sandbox credentials." }
+    ],
+    opportunity: {
+      stage: "Proposal Sent",
+      value: 45000,
+      probability: 70,
+      expectedCloseDate: "2026-06-10"
+    }
   },
   {
     uid: "cust_3",
@@ -163,7 +210,30 @@ let mockCustomers: any[] = [
       { month: "Mar", ltv: 0 },
       { month: "Apr", ltv: 0 },
       { month: "May", ltv: 0 }
-    ]
+    ],
+    contact: {
+      phone: "+44 20 7946 0958",
+      company: "Sterling Ventures",
+      role: "Managing Partner",
+      marketingConsent: false,
+      trackingConsent: false
+    },
+    account: {
+      company: "Sterling Ventures",
+      industry: "Venture Capital",
+      size: "Small (50-200 employees)",
+      region: "EMEA (London)"
+    },
+    interactions: [
+      { id: "int_6", channel: "Support Chat", timestamp: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Support Bot", sentiment: "Negative" as const, summary: "Encountered dashboard loading slowness. Expressed intent to close the account if latency persists." },
+      { id: "int_7", channel: "Email", timestamp: new Date(Date.now() - 22 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Marcus Aurelius", sentiment: "Negative" as const, summary: "Sent email requesting billing invoice clarification. No response received for 5 days." }
+    ],
+    opportunity: {
+      stage: "Lead Qualification",
+      value: 12000,
+      probability: 10,
+      expectedCloseDate: "2026-06-01"
+    }
   },
   {
     uid: "cust_4",
@@ -186,7 +256,30 @@ let mockCustomers: any[] = [
       { month: "Mar", ltv: 72000 },
       { month: "Apr", ltv: 80000 },
       { month: "May", ltv: 89000 }
-    ]
+    ],
+    contact: {
+      phone: "+7 495 123-4567",
+      company: "Rostova Logistics",
+      role: "Global Head of Infrastructure",
+      marketingConsent: true,
+      trackingConsent: true
+    },
+    account: {
+      company: "Rostova Logistics",
+      industry: "Logistics & Supply Chain",
+      size: "Enterprise (10000+ employees)",
+      region: "EMEA (Eastern Europe)"
+    },
+    interactions: [
+      { id: "int_8", channel: "Email", timestamp: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Danielle Gold", sentiment: "Negative" as const, summary: "Emailed reporting critical message drops on core webhook streams. Needs immediate diagnostic support." },
+      { id: "int_9", channel: "Call", timestamp: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(), agentOrBot: "Danielle Gold", sentiment: "Neutral" as const, summary: "Configured webhook endpoint and discussed high-availability clustering." }
+    ],
+    opportunity: {
+      stage: "Renewal Review",
+      value: 89000,
+      probability: 55,
+      expectedCloseDate: "2026-07-20"
+    }
   },
   {
     uid: "cust_5",
@@ -209,7 +302,29 @@ let mockCustomers: any[] = [
       { month: "Mar", ltv: 8000 },
       { month: "Apr", ltv: 10000 },
       { month: "May", ltv: 12000 }
-    ]
+    ],
+    contact: {
+      phone: "+81 3 5555 0143",
+      company: "Harlan Security",
+      role: "Lead Threat Modeler",
+      marketingConsent: true,
+      trackingConsent: true
+    },
+    account: {
+      company: "Harlan Security",
+      industry: "Cybersecurity",
+      size: "Enterprise (2000+ employees)",
+      region: "APAC (Tokyo)"
+    },
+    interactions: [
+      { id: "int_10", channel: "Web Form", timestamp: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(), agentOrBot: "System", sentiment: "Positive" as const, summary: "Downloaded technical whitepapers on multi-tenant isolation architectures." }
+    ],
+    opportunity: {
+      stage: "Ecosystem Evaluation",
+      value: 12000,
+      probability: 85,
+      expectedCloseDate: "2026-06-30"
+    }
   }
 ];
 
@@ -919,6 +1034,353 @@ app.post("/api/revenue-intelligence", (req, res) => {
       customers: mockCustomers,
       auditLogs: mockAuditLogs
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/summarize-customer", async (req, res) => {
+  try {
+    const { uid } = req.body;
+    const customer = mockCustomers.find(c => c.uid === uid);
+    if (!customer) return res.status(404).json({ error: "Customer profiles not found" });
+    
+    const interactionsStr = (customer.interactions || [])
+      .map(i => `[${i.channel} - ${i.sentiment}] ${i.agentOrBot}: ${i.summary}`)
+      .join("\n");
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      const fallbackBullets = [
+        `Maintained active connectivity through ${customer.interactions?.[0]?.channel || 'direct outreach'} loops.`,
+        `Primary representative owner matches assigned sales specialist ${customer.assignedRep}.`,
+        `Engagement rating is successfully modeled as ${customer.sentiment} with score rating of ${customer.leadScore}.`,
+        `Current workspace deal value is tracked securely in sub-entities at $${customer.lifetimeValue.toLocaleString()}.`,
+        `System flag indicates ${customer.dealRiskStatus} with win likelihood currently hovering around ${customer.winProbability}%.`
+      ];
+      return res.json({ summary: fallbackBullets.map(b => `- ${b}`).join("\n") });
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = "You are a seasoned enterprise growth banker. Summarize all recent interactions into a 'Last 30 days in 5 bullets' view. Keep every bullet extremely highly-polished, precise, and professional. Every single bullet must start with a minus sign '- '. Do not output anything other than the five bullets.";
+    const prompt = `Summarize these recent customer interactions for ${customer.name} (${customer.email}):\n${interactionsStr}`;
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { systemInstruction: systemPrompt }
+    });
+    res.json({ summary: response.text });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/score-lead", async (req, res) => {
+  try {
+    const { uid } = req.body;
+    const customer = mockCustomers.find(c => c.uid === uid);
+    if (!customer) return res.status(404).json({ error: "Customer profile not found" });
+    
+    const engagementStr = `Lead Score: ${customer.leadScore}, Win Probability: ${customer.winProbability}%, Last Interaction: ${customer.lastInteractionDays} days ago`;
+    const firmographicsStr = `Account: ${customer.account?.company}, Industry: ${customer.account?.industry}, Size: ${customer.account?.size}, Region: ${customer.account?.region}. Role of buyer: ${customer.contact?.role}`;
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      let rating = "Medium";
+      if (customer.leadScore > 80) rating = "High";
+      if (customer.leadScore < 50) rating = "Low";
+      
+      const fallbackRationale = `Calculated lead rank as ${rating} based on active score index metrics. Customer profile reflects ${customer.account?.size || 'active'} size footprint in the ${customer.account?.industry || 'enterprise'} market. Last contact elapsed ${customer.lastInteractionDays} day(s) with clear consent metrics established.`;
+      return res.json({ rating, rationale: fallbackRationale });
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = "You are a seasoned enterprise growth banker. Inspect customer profile details and score/rank lead conversion potential as either High, Medium, or Low, and write a professional rationale. Return response strictly in JSON matching schema: { rating: 'High' | 'Medium' | 'Low', rationale: '...' }";
+    const prompt = `Review Lead and rank it:\nEngagement: ${engagementStr}\nFirmographics: ${firmographicsStr}`;
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            rating: { type: Type.STRING },
+            rationale: { type: Type.STRING }
+          },
+          required: ["rating", "rationale"]
+        }
+      }
+    });
+    const result = JSON.parse(response.text || "{}");
+    res.json({ rating: result.rating, rationale: result.rationale });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/detect-churn", async (req, res) => {
+  try {
+    const { uid } = req.body;
+    const customer = mockCustomers.find(c => c.uid === uid);
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+    
+    const interactionsStr = (customer.interactions || [])
+      .map(i => `[${i.channel} - ${i.sentiment}] ${i.summary}`)
+      .join("\n");
+    const riskMetric = `Days since last contact: ${customer.lastInteractionDays}. Deal Risk Matrix indicates: ${customer.dealRiskStatus}. Customer Sentiment matches: ${customer.sentiment}`;
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      let atRisk = false;
+      if (customer.sentiment === "Negative" || customer.lastInteractionDays > 14) {
+        atRisk = true;
+      }
+      const fallbackRationale = atRisk 
+        ? `Churn threat flagged as AT-RISK due to negative buyer sentiment metrics and inactivity duration of ${customer.lastInteractionDays} days. Recommend scheduling an immediate high-touch CSM alignment call.`
+        : `Low churn risk. Engagement logs are verified within standard SLA levels. Product utilization activity matches premium limits.`;
+      
+      return res.json({ atRisk, rationale: fallbackRationale });
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = "You are a seasoned growth banker and customer success strategist. Analyze the user engagement records and decide if they represent an active Churn Threat (atRisk = True/False), providing a tailored rationale and mitigation steps. Return strictly JSON matching: { atRisk: boolean, rationale: '...' }";
+    const prompt = `Review customer engagement metrics and detect Churn Risk:\n${riskMetric}\nInteractions History:\n${interactionsStr}`;
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            atRisk: { type: Type.BOOLEAN },
+            rationale: { type: Type.STRING }
+          },
+          required: ["atRisk", "rationale"]
+        }
+      }
+    });
+    const result = JSON.parse(response.text || "{}");
+    res.json({ atRisk: result.atRisk, rationale: result.rationale });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/campaign-builder", async (req, res) => {
+  try {
+    const { audience, offer, mix, tone, language, persona, useSearch } = req.body;
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      const mockCampaignOutput = {
+        emails: {
+          welcome: `Subject: Welcome to the Future of Security [${language}]\n\nHello, we are excited to have you onboard. As a leading player in the ${audience} space, you will benefit from our special product: ${offer}. This represents a unique milestone towards compliance.`,
+          nurture: `Subject: Unlocking full potential and scalability [${language}]\n\nDid you know that teams utilizing our specialized solution (${offer}) experience a 50% decrease in integration delays? Let's discuss details.`,
+          reactivation: `Subject: Special offer for your sandbox telemetry [${language}]\n\nWe noticed a brief pause in your sandbox audit logs. To assist reactivation, here is a custom voucher for ${offer} today.`
+        },
+        ads: {
+          search: `Special Offer: ${offer} for ${audience}. Secure, scalable, with robust D3 telemetry built in.`,
+          display: `Empowering ${persona || "Enterprise"} Teams - Secure ${offer} sandbox integration.`,
+          social: `Are you a ${persona || "Budget-conscious manager"} looking to automate? Integrate our latest ${offer} and simplify auditing.`
+        },
+        landingPage: {
+          headline: `Automate Your Production Compliance with ${offer}`,
+          valueProp: `Engineered specifically for the needs of ${audience}, enabling instant SOC2 auditing and low-latency API streams.`,
+          faqs: `Q: Is ${offer} fully GDPR compliant?\nA: Yes, certified and validated across all EMEA and APAC regional datastores.`,
+          cta: `Start Your ${offer} 30-Day Evaluation`
+        },
+        shortMessages: `SMS: Urgent! Get instant secure access to our customized offer: ${offer}. Reply YES to consult our rep.`,
+        abTests: [
+          { variant: "Variant A (Benefit-led)", hypothesis: `Focusing on the high-availability and security of '${offer}' will yield 22% higher conversions for enterprise decision-makers.` },
+          { variant: "Variant B (Urgency-led)", hypothesis: `Using a limited-time trial expiration badge for ${offer} will increase click conversion rates among mobile users by 12%.` }
+        ]
+      };
+      return res.json(mockCampaignOutput);
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = "You are an avant-garde chief of growth marketing. Given a campaign brief, you write comprehensive content assets. Return response strictly in JSON matching the specified schema. Output content in the requested language translated perfectly.";
+    const prompt = `Compose a marketing campaign with these parameters:
+      - Target Audience: ${audience}
+      - Special Offer: ${offer}
+      - Channel Mix: ${mix}
+      - Copy Tone: ${tone}
+      - Language: ${language}
+      - Target Persona: ${persona}
+      - Use Google Search Grounding: ${useSearch ? 'True' : 'False'}`;
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: systemPrompt,
+        tools: useSearch ? [{ googleSearch: {} }] : undefined,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            emails: {
+              type: Type.OBJECT,
+              properties: {
+                welcome: { type: Type.STRING },
+                nurture: { type: Type.STRING },
+                reactivation: { type: Type.STRING }
+              },
+              required: ["welcome", "nurture", "reactivation"]
+            },
+            ads: {
+              type: Type.OBJECT,
+              properties: {
+                search: { type: Type.STRING },
+                display: { type: Type.STRING },
+                social: { type: Type.STRING }
+              },
+              required: ["search", "display", "social"]
+            },
+            landingPage: {
+              type: Type.OBJECT,
+              properties: {
+                headline: { type: Type.STRING },
+                valueProp: { type: Type.STRING },
+                faqs: { type: Type.STRING },
+                cta: { type: Type.STRING }
+              },
+              required: ["headline", "valueProp", "faqs", "cta"]
+            },
+            shortMessages: { type: Type.STRING },
+            abTests: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  variant: { type: Type.STRING },
+                  hypothesis: { type: Type.STRING }
+                },
+                required: ["variant", "hypothesis"]
+              }
+            }
+          },
+          required: ["emails", "ads", "landingPage", "shortMessages", "abTests"]
+        }
+      }
+    });
+    
+    const result = JSON.parse(response.text || "{}");
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/support-sentiment", async (req, res) => {
+  try {
+    const { issue } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      let intensity = 40;
+      let classification = "Neutral";
+      const lowerIssue = issue.toLowerCase();
+      if (lowerIssue.includes("broken") || lowerIssue.includes("fail") || lowerIssue.includes("frustrated") || lowerIssue.includes("error") || lowerIssue.includes("slow") || lowerIssue.includes("cancel") || lowerIssue.includes("crash")) {
+        intensity = 88;
+        classification = "Negative";
+      }
+      return res.json({ intensity, classification });
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = "You are an empathetic CX support specialist. Analyze this support ticket, classify the sentiment (Positive, Neutral, Negative) and rate distress intensity (0 to 100). Return strictly JSON: { intensity: number, classification: 'Positive' | 'Neutral' | 'Negative' }";
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: issue,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            intensity: { type: Type.INTEGER },
+            classification: { type: Type.STRING }
+          },
+          required: ["intensity", "classification"]
+        }
+      }
+    });
+    const result = JSON.parse(response.text || "{}");
+    res.json({ intensity: result.intensity, classification: result.classification });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/support-portal-chat", async (req, res) => {
+  try {
+    const { message, customer } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      const customerName = customer ? customer.name : "Valued Member";
+      const currentTier = customer ? customer.tier : "Free";
+      const activeTicketsStr = (mockSupportTickets.filter(t => t.customer_id === customer?.uid && (t.status as string) !== "Resolved"))
+        .map(t => `${t.ticket_id} (Issue: ${t.issue.substring(0, 40)}...)`)
+        .join(", ");
+      
+      let answer = `Hello ${customerName}! I am your empathetic virtual assistant. I see you are on our ${currentTier} tier. `;
+      if (activeTicketsStr) {
+        answer += `Regarding your active ticket reference: [${activeTicketsStr}], I will immediately sync with engineering to expedite. I've noted your distress level and escalated it with your dedicated success rep: ${customer?.assignedRep || 'Danielle Gold'}.`;
+      } else {
+        answer += `Your enterprise workspaces look perfectly operational under SLA guidelines. How else can I assist you with catalog setups, developer sandboxes, or billing details?`;
+      }
+      return res.json({ answer });
+    }
+    
+    const ai = getGeminiClient();
+    const activeTickets = mockSupportTickets.filter(t => t.customer_id === customer?.uid);
+    const clientContext = {
+      name: customer?.name,
+      email: customer?.email,
+      tier: customer?.tier,
+      assignedRep: customer?.assignedRep,
+      activeTickets
+    };
+    
+    const systemPrompt = `You are an empathetic customer concierge. You are context-aware and know the customer profile details: ${JSON.stringify(clientContext)}. Be highly helpful, address their concerns friendly, and offer precise developer troubleshooting tips.`;
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: message,
+      config: { systemInstruction: systemPrompt }
+    });
+    res.json({ answer: response.text });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/support-portal-faq", async (req, res) => {
+  try {
+    const { catalog, customer } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      const fallbackGuide = `### Personalized Troubleshooting FAQ For: ${catalog.toUpperCase()}\n\n` +
+        `#### 1. How do I authenticate my client workspace inside ${catalog}?\n` +
+        `Confirm your client API keys are properly loaded in the header. For ${customer?.tier || 'Enterprise'} tier members, tasks are routed directly to elite high-performance regional bounds.\n\n` +
+        `#### 2. Resolving low-latency webhook drop bounds on ${catalog}\n` +
+        `Ensure your server respects standard keep-alive guidelines. If messages drop under high workload volumes, check your SOC2 analytics logs to balance concurrent events.\n\n` +
+        `#### 3. Where can I find billing invoices and credit status?\n` +
+        `Check with your dedicated representative, ${customer?.assignedRep || 'Danielle Gold'}, to dispatch invoice records to: ${customer?.email || 'your registered company email'}.`;
+      return res.json({ faq: fallbackGuide });
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = `You are a professional empathetic support engineer. Generate a highly personalized troubleshooting troubleshooting guide/FAQ based on the customer catalog option: '${catalog}' and their active account details: Name=${customer?.name}, Tier=${customer?.tier}, Email=${customer?.email}. Produce a crisp Markdown structure with headings, bullet points, and helpful developer steps.`;
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: `Generate personalized troubleshooting FAQ for ${catalog}`,
+      config: { systemInstruction: systemPrompt }
+    });
+    res.json({ faq: response.text });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

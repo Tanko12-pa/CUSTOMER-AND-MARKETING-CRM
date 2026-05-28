@@ -25,6 +25,37 @@ export interface User {
   permissions: string[];
 }
 
+export interface ContactInfo {
+  phone: string;
+  company: string;
+  role: string;
+  marketingConsent: boolean;
+  trackingConsent: boolean;
+}
+
+export interface AccountInfo {
+  company: string;
+  industry: string;
+  size: string;
+  region: string;
+}
+
+export interface Interaction {
+  id: string;
+  channel: string;
+  timestamp: string;
+  agentOrBot: string;
+  sentiment: SentimentType;
+  summary: string;
+}
+
+export interface Opportunity {
+  stage: string;
+  value: number;
+  probability: number;
+  expectedCloseDate: string;
+}
+
 export interface Customer {
   uid: string;
   name: string;
@@ -41,6 +72,10 @@ export interface Customer {
   createdAt: string;
   notes?: string;
   growthTrends?: { month: string; ltv: number }[];
+  contact?: ContactInfo;
+  account?: AccountInfo;
+  interactions?: Interaction[];
+  opportunity?: Opportunity;
 }
 
 export interface Campaign {

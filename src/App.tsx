@@ -28,6 +28,7 @@ import { AudioTranscriber } from "./components/AudioTranscriber";
 import { DatabaseExplorer } from "./components/DatabaseExplorer";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { SystemAuditLogs } from "./components/SystemAuditLogs";
+import { MutationsAuditFeed } from "./components/MutationsAuditFeed";
 import { Customer, Campaign, SupportTicket, AuditLog } from "./types";
 
 export default function App() {
@@ -710,6 +711,11 @@ export default function App() {
         </div>
 
       </main>
+
+      {/* Real-Time Database Mutations & Audit Logs component */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 mb-8">
+        <MutationsAuditFeed logs={auditLogs} onRefresh={syncStateData} />
+      </div>
 
       {/* FOOTER CO-DESIGN INFORMATION */}
       <footer className="bg-[#050505] border-t border-[#27272A] py-6 px-4 text-center mt-auto text-xs text-[#A1A1AA] font-mono">
