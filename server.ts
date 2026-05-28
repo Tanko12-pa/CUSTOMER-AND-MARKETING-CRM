@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -22,6 +23,11 @@ import {
 dotenv.config();
 
 const app = express();
+
+app.use(cors({
+  origin: "http://localhost:5173", // Your Vite frontend URL
+  credentials: true
+}));
 
 // Initialize Firebase App & Firestore Backend Connections
 let db: any = null;

@@ -1,45 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Default deny catch-all
+    
+    // TEMPORARY TESTING ONLY (Allows anyone to read/write for development)
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
-
-    // Helper to evaluate valid characters for resource document identifiers
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    
+    /* 
+    PRODUCTION RECOMMENDED: Only allow authenticated users
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
-
-    // Secure Corporate Users
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if isValidId(userId);
-    }
-
-    // Secure CRM Customers Profiles
-    match /customers/{customerId} {
-      allow read: if true;
-      allow write: if isValidId(customerId);
-    }
-
-    // Secure Marketing Campaigns Databases
-    match /marketing_campaigns/{campaignId} {
-      allow read: if true;
-      allow write: if isValidId(campaignId);
-    }
-
-    // Secure Core Customer Support Tickets
-    match /support_tickets/{ticketId} {
-      allow read: if true;
-      allow write: if isValidId(ticketId);
-    }
-
-    // Secure System Level Audit Logs
-    match /audit_logs/{logId} {
-      allow read: if true;
-      allow write: if isValidId(logId);
-    }
+    */
   }
 }
