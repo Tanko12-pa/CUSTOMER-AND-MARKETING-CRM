@@ -30,7 +30,20 @@
         "winProbability": { "type": "number" },
         "assignedRep": { "type": "string" },
         "dealRiskStatus": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" },
+        "growthTrends": {
+          "type": "array",
+          "description": "Historical milestones and values for LTV growth over previous months.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "month": { "type": "string" },
+              "ltv": { "type": "number" }
+            },
+            "required": ["month", "ltv"]
+          }
+        }
       },
       "required": ["uid", "name", "email", "lifecycleStage", "tier"]
     },

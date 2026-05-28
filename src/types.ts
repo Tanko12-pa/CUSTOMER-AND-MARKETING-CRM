@@ -39,6 +39,8 @@ export interface Customer {
   assignedRep: string;
   dealRiskStatus: string;
   createdAt: string;
+  notes?: string;
+  growthTrends?: { month: string; ltv: number }[];
 }
 
 export interface Campaign {
@@ -71,6 +73,7 @@ export interface AuditLog {
   user: string;
   status: "Success" | "Failed";
   details: string;
+  changedFields?: Record<string, { old: any; new: any }>;
 }
 
 export interface AIResponse {

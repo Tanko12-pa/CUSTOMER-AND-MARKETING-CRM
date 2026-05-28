@@ -267,7 +267,7 @@ export function SupportModule({ tickets, customers, onUpdateState }: SupportModu
                 <div className="pt-4 border-t border-[#27272A]">
                   <button
                     onClick={handleResolveTicket}
-                    className="w-full bg-emerald-600 hover:bg-emerald-705 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow shadow-emerald-950 transition-colors flex items-center justify-center space-x-2 cursor-pointer"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow shadow-emerald-950 transition-colors flex items-center justify-center space-x-2 cursor-pointer"
                   >
                     <CheckSquare className="w-4 h-4" />
                     <span>Incorporate Response & Resolve Ticket</span>

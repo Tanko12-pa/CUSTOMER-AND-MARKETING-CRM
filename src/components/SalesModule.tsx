@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Customer } from "../types";
+import { RevenueForecast } from "./RevenueForecast";
 import { 
   Brain, 
   DollarSign, 
@@ -60,6 +61,13 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
     } finally {
       setDigestLoading(false);
     }
+  };
+
+  const handleCopyDigest = () => {
+    if (!digestResult) return;
+    navigator.clipboard.writeText(digestResult.digestBody);
+    setCopiedDigest(true);
+    setTimeout(() => setCopiedDigest(false), 2000);
   };
 
   // Score comparison cache & copy feedback states
@@ -133,6 +141,9 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
 
   // Compose / simulated email state
   const [emailForm, setEmailForm] = useState({ subject: "", body: "", sent: false });
+
+  // Add Note state
+  const [newNoteText, setNewNoteText] = useState("");
 
   // Filter customers by selected quick-filter criteria
   const filteredCustomers = useMemo(() => {
@@ -361,6 +372,16 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
     setReminderNote("");
   };
 
+  const handleAddNote = async () => {
+    if (!activeCustomer || !newNoteText.trim()) return;
+    const timestamp = new Date().toLocaleString();
+    const noteLine = `- [Note added at ${timestamp}]: ${newNoteText.trim()}`;
+    const updatedNotes = activeCustomer.notes ? `${activeCustomer.notes}\n${noteLine}` : noteLine;
+    
+    await onUpdateState("UPDATE_CUSTOMER", { uid: activeCustomer.uid, notes: updatedNotes });
+    setNewNoteText("");
+  };
+
   const getActivityHistory = (uid: string, lastInteractionDays: number) => {
     const seed = uid.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const history = [];
@@ -415,7 +436,19 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
             <TrendingUp className="w-5 h-5 text-[#C5A059]" />
             <span className="text-sm font-bold uppercase font-display text-[#E4E4E7] tracking-tight">Sales Funnel Health & Diagnostics</span>
           </div>
-          <span className="text-[10px] font-mono text-[#A1A1AA] bg-[#0A0A0B] border border-[#27272A] px-2 py-0.5 rounded">Total Funnel Pipeline: {customers.length} Accounts</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              id="generate-daily-digest-btn"
+              onClick={handleTriggerEmailDailyDigest}
+              disabled={digestLoading}
+              className="px-3 py-1 bg-[#C5A059]/10 hover:bg-[#C5A059]/20 border border-[#C5A059]/35 hover:border-[#C5A059]/65 text-[#C5A059] font-mono text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all shadow cursor-pointer disabled:opacity-50"
+              title="Queries server to compile live pipeline hazards and campaign analytics into an executive overview digest"
+            >
+              <Sparkles className={`w-3.5 h-3.5 shrink-0 ${digestLoading ? "animate-spin text-[#C5A059]" : "text-[#C5A059]"}`} />
+              <span>{digestLoading ? "Generating Briefing..." : "Generate AI Daily Briefing"}</span>
+            </button>
+            <span className="text-[10px] font-mono text-[#A1A1AA] bg-[#0A0A0B] border border-[#27272A] px-2.2 py-1 rounded">Total Funnel Pipeline: {customers.length} Accounts</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -773,7 +806,7 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
             </div>
 
             {activeCustomer && (
-              <div className="bg-[#0A0A0B] rounded-xl p-4 border border-[#27272A] text-sm space-y-3.5 relative">
+              <div id="printable-customer-card" className="bg-[#0A0A0B] rounded-xl p-4 border border-[#27272A] text-sm space-y-3.5 relative">
                 {/* Visual Header with name and Print button */}
                 <div className="flex items-center justify-between border-b border-[#27272A]/70 pb-3 mb-2">
                   <div>
@@ -930,15 +963,39 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
                 </div>
 
                 {/* INTERNAL COMPLIANCE NOTES AREA */}
-                <div className="pt-3 border-t border-[#27272A]/70 space-y-1.5">
+                <div className="pt-3 border-t border-[#27272A]/70 space-y-1.5 mb-2">
                   <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-mono font-bold block">Internal Notes Field</span>
                   {activeCustomer.notes ? (
                     <div className="bg-[#141416]/50 border border-[#27272A]/40 p-2 text-xs text-[#E4E4E7] font-mono rounded h-[65px] overflow-y-auto whitespace-pre-line leading-relaxed scrollbar-thin select-text">
                       {activeCustomer.notes}
                     </div>
                   ) : (
-                    <span className="text-[10px] text-[#71717A] italic block font-sans">No compliance notes logged yet. Reminders append automatically.</span>
+                    <span className="text-[10px] text-[#71717A] italic block font-sans">No compliance notes logged yet. Notes and reminders append automatically.</span>
                   )}
+                </div>
+
+                {/* ADD NOTE FIELD */}
+                <div className="space-y-1.5 pb-3">
+                  <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-mono font-bold block">Add Customer Note</span>
+                  <div className="flex flex-col gap-1.5">
+                    <textarea
+                      id="add-customer-note-textarea"
+                      placeholder="Type a new customer event or status log..."
+                      value={newNoteText}
+                      onChange={(e) => setNewNoteText(e.target.value)}
+                      rows={2}
+                      className="w-full bg-[#141416] border border-[#27272A] text-xs p-2 rounded-lg text-[#E4E4E7] focus:outline-none focus:border-[#C5A059] resize-none font-sans"
+                    />
+                    <button
+                      id="add-customer-note-btn"
+                      type="button"
+                      onClick={handleAddNote}
+                      disabled={!newNoteText.trim()}
+                      className="w-full bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] py-1.5 px-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all text-[10px] font-bold uppercase tracking-wider font-mono cursor-pointer"
+                    >
+                      Save Note to Firestore
+                    </button>
+                  </div>
                 </div>
 
                 {/* SET FOLLOW-UP REMINDER SECTION */}
@@ -1158,6 +1215,75 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
         </div>
       </div>
     </div>
+
+    {/* FULL-WIDTH PREMIUM D3 REVENUE FORECAST COMPONENT */}
+    <div className="mt-6 animate-fade-in" id="sales-revenue-forecast-wrapper">
+      <RevenueForecast customer={activeCustomer} />
+    </div>
+
+    {digestResult && (
+      <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 min-h-screen font-sans">
+        <div className="bg-[#141416] border-2 border-[#C5A059] rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative space-y-4 flex flex-col max-h-[90vh]">
+          <div className="flex items-center justify-between border-b border-[#27272A]/70 pb-3 animate-fade-in">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-5 h-5 text-[#C5A059]" />
+              <h4 className="text-sm font-bold text-white uppercase font-display tracking-tight">AI Operations Daily Briefing</h4>
+            </div>
+            <button 
+              onClick={() => setDigestResult(null)}
+              className="text-[#71717A] hover:text-white transition-colors text-xs font-mono px-2"
+            >
+              ✕ CLOSE
+            </button>
+          </div>
+
+          <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#0A0A0B] p-3 rounded-lg border border-[#27272A]/60 text-xs font-mono">
+              <div>
+                <span className="text-[#71717A] uppercase block text-[8px] font-bold">Digest Recipient</span>
+                <span className="text-[#E4E4E7] block font-semibold truncate">{digestResult.recipient}</span>
+              </div>
+              <div>
+                <span className="text-[#71717A] uppercase block text-[8px] font-bold">Status Indicator</span>
+                <span className="text-emerald-400 block font-semibold">
+                  ● SYNCHRONIZED REVENUE AGENT
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-[#0A0A0B] p-3 rounded-lg border border-[#27272A]/60 text-xs font-mono space-y-1">
+              <span className="text-[#71717A] uppercase block text-[8px] font-bold">Mail Subject Line</span>
+              <span className="text-white block font-medium leading-normal bg-[#141416] px-2.5 py-1.5 rounded border border-[#27272A]/40 font-mono text-[10.5px]">
+                {digestResult.digestSubject}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[#71717A] uppercase block text-[8px] font-mono font-bold">Synthesized Live Digest Copy</span>
+              <pre className="text-[10.5px] text-[#D4D4D8] bg-[#0A0A0B] p-4 rounded-xl border border-[#27272A] whitespace-pre-wrap leading-relaxed font-mono select-text max-h-[320px] overflow-y-auto scrollbar-thin">
+                {digestResult.digestBody}
+              </pre>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-3 border-t border-[#27272A]/70">
+            <button
+              onClick={handleCopyDigest}
+              className="flex-1 bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] py-2.5 rounded-xl font-bold font-mono uppercase tracking-wider text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{copiedDigest ? "Co-written Briefing Copied!" : "Copy Full Operations Text"}</span>
+            </button>
+            <button
+              onClick={() => setDigestResult(null)}
+              className="w-24 bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white py-2.5 rounded-xl font-bold font-mono uppercase tracking-wider text-xs transition-colors cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {activeTriggeredAlert && (
       <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 min-h-screen font-sans">

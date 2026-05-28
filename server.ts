@@ -89,7 +89,7 @@ function getGeminiClient(): GoogleGenAI {
 }
 
 // In-Memory Database representing CRM Cloud Firestore collections
-let mockCustomers = [
+let mockCustomers: any[] = [
   {
     uid: "cust_1",
     name: "Almaric Vance",
@@ -104,6 +104,14 @@ let mockCustomers = [
     assignedRep: "Danielle Gold",
     dealRiskStatus: "Low Risk",
     createdAt: new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString(),
+    growthTrends: [
+      { month: "Dec", ltv: 55000 },
+      { month: "Jan", ltv: 70000 },
+      { month: "Feb", ltv: 85000 },
+      { month: "Mar", ltv: 100000 },
+      { month: "Apr", ltv: 115000 },
+      { month: "May", ltv: 125000 }
+    ]
   },
   {
     uid: "cust_2",
@@ -119,6 +127,14 @@ let mockCustomers = [
     assignedRep: "Danielle Gold",
     dealRiskStatus: "Medium Risk: Inactivity Warning",
     createdAt: new Date(Date.now() - 20 * 24 * 3600 * 1000).toISOString(),
+    growthTrends: [
+      { month: "Dec", ltv: 10000 },
+      { month: "Jan", ltv: 18000 },
+      { month: "Feb", ltv: 25000 },
+      { month: "Mar", ltv: 32000 },
+      { month: "Apr", ltv: 38000 },
+      { month: "May", ltv: 45000 }
+    ]
   },
   {
     uid: "cust_3",
@@ -134,6 +150,14 @@ let mockCustomers = [
     assignedRep: "Marcus Aurelius",
     dealRiskStatus: "High Risk: Churn Inbound",
     createdAt: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString(),
+    growthTrends: [
+      { month: "Dec", ltv: 0 },
+      { month: "Jan", ltv: 0 },
+      { month: "Feb", ltv: 0 },
+      { month: "Mar", ltv: 0 },
+      { month: "Apr", ltv: 0 },
+      { month: "May", ltv: 0 }
+    ]
   },
   {
     uid: "cust_4",
@@ -149,6 +173,14 @@ let mockCustomers = [
     assignedRep: "Danielle Gold",
     dealRiskStatus: "At Risk: Negative CSAT",
     createdAt: new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString(),
+    growthTrends: [
+      { month: "Dec", ltv: 35000 },
+      { month: "Jan", ltv: 48000 },
+      { month: "Feb", ltv: 59000 },
+      { month: "Mar", ltv: 72000 },
+      { month: "Apr", ltv: 80000 },
+      { month: "May", ltv: 89000 }
+    ]
   },
   {
     uid: "cust_5",
@@ -164,6 +196,14 @@ let mockCustomers = [
     assignedRep: "Marcus Aurelius",
     dealRiskStatus: "Low Risk",
     createdAt: new Date().toISOString(),
+    growthTrends: [
+      { month: "Dec", ltv: 2000 },
+      { month: "Jan", ltv: 4000 },
+      { month: "Feb", ltv: 6000 },
+      { month: "Mar", ltv: 8000 },
+      { month: "Apr", ltv: 10000 },
+      { month: "May", ltv: 12000 }
+    ]
   }
 ];
 
@@ -245,7 +285,7 @@ let mockAuditLogs = [
 ];
 
 // Helper to record audit logs
-function addAudit(action: string, collection: string, details: string, user: string = "akindewum@gmail.com", statusStr: "Success" | "Failed" = "Success") {
+function addAudit(action: string, collection: string, details: string, user: string = "akindewum@gmail.com", statusStr: "Success" | "Failed" = "Success", changedFields?: Record<string, { old: any; new: any }>) {
   const newLog = {
     id: `log_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     timestamp: new Date().toISOString(),
@@ -253,7 +293,8 @@ function addAudit(action: string, collection: string, details: string, user: str
     collection,
     user,
     status: statusStr,
-    details
+    details,
+    changedFields
   };
   mockAuditLogs.unshift(newLog);
   if (db) {
@@ -699,6 +740,18 @@ app.post("/api/update-state", async (req, res) => {
     } else if (type === "UPDATE_CUSTOMER") {
       const idx = mockCustomers.findIndex(c => c.uid === payload.uid);
       if (idx !== -1) {
+        const oldRecord = { ...mockCustomers[idx] };
+        const changedFields: Record<string, { old: any; new: any }> = {};
+        
+        Object.keys(payload).forEach(key => {
+          if (payload[key] !== undefined && oldRecord[key as keyof typeof oldRecord] !== payload[key]) {
+            changedFields[key] = {
+              old: oldRecord[key as keyof typeof oldRecord],
+              new: payload[key]
+            };
+          }
+        });
+
         mockCustomers[idx] = {
           ...mockCustomers[idx],
           ...payload,
@@ -706,11 +759,15 @@ app.post("/api/update-state", async (req, res) => {
         // Re-enforce sentiment checks
         if (mockCustomers[idx].sentiment === "Negative") {
           mockCustomers[idx].dealRiskStatus = "At Risk: Negative Sentiment";
+          changedFields["dealRiskStatus"] = {
+            old: oldRecord.dealRiskStatus,
+            new: "At Risk: Negative Sentiment"
+          };
         }
         if (db) {
           await setDoc(doc(db, "customers", payload.uid), mockCustomers[idx]);
         }
-        addAudit("UPDATE_RECORD", "customers", `Updated customer ${mockCustomers[idx].name}`);
+        addAudit("UPDATE_RECORD", "customers", `Updated customer ${mockCustomers[idx].name}`, "akindewum@gmail.com", "Success", changedFields);
       }
     } else if (type === "DELETE_CUSTOMERS") {
       const uidsToDelete = payload.uids || [];
@@ -750,6 +807,30 @@ app.post("/api/update-state", async (req, res) => {
       }
       
       addAudit("CREATE_RECORD", "support_tickets", `Added support ticket for ${newTicket.customerName}`);
+    } else if (type === "UPDATE_TICKET") {
+      const idx = mockSupportTickets.findIndex(t => t.ticket_id === payload.ticket_id);
+      if (idx !== -1) {
+        const oldRecord = { ...mockSupportTickets[idx] };
+        const changedFields: Record<string, { old: any; new: any }> = {};
+
+        Object.keys(payload).forEach(key => {
+          if (payload[key] !== undefined && oldRecord[key as keyof typeof oldRecord] !== payload[key]) {
+            changedFields[key] = {
+              old: oldRecord[key as keyof typeof oldRecord],
+              new: payload[key]
+            };
+          }
+        });
+
+        mockSupportTickets[idx] = {
+          ...mockSupportTickets[idx],
+          ...payload,
+        };
+        if (db) {
+          await setDoc(doc(db, "support_tickets", payload.ticket_id), mockSupportTickets[idx]);
+        }
+        addAudit("UPDATE_RECORD", "support_tickets", `Updated support ticket ${payload.ticket_id} to status ${payload.status || 'Updated'}`, "akindewum@gmail.com", "Success", changedFields);
+      }
     } else if (type === "LAUNCH_CAMPAIGN") {
       const idx = mockCampaigns.findIndex(camp => camp.campaign_id === payload.campaign_id);
       if (idx !== -1) {
