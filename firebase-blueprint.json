@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Authenticated corporate representative account metadata.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string", "description": "Unique Firebase Auth UID." },
+        "name": { "type": "string", "description": "Standard display name." },
+        "email": { "type": "string", "format": "email", "description": "Corporate email address." },
+        "role": { "type": "string", "enum": ["Enterprise Manager", "Sales Rep", "Marketer", "Support Specialist"] },
+        "permissions": { "type": "array", "description": "List of ACL permission nodes." }
+      },
+      "required": ["user_id", "name", "email", "role"]
+    },
+    "Customer": {
+      "title": "Customer Record",
+      "description": "Primary CRM record denoting customer segment, lifecycle, value, and health.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique CRM identity." },
+        "name": { "type": "string", "description": "Full customer or company name." },
+        "email": { "type": "string", "format": "email" },
+        "lifecycleStage": { "type": "string", "enum": ["Lead", "MQL", "SQL", "Customer", "Churned"] },
+        "tier": { "type": "string", "enum": ["Free", "Premium", "Enterprise"] },
+        "leadScore": { "type": "integer" },
+        "lifetimeValue": { "type": "number" },
+        "sentiment": { "type": "string", "enum": ["Positive", "Neutral", "Negative", "At Risk"] },
+        "lastInteractionDays": { "type": "integer" },
+        "winProbability": { "type": "number" },
+        "assignedRep": { "type": "string" },
+        "dealRiskStatus": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "lifecycleStage", "tier"]
+    },
+    "Campaign": {
+      "title": "Marketing Campaign",
+      "description": "A campaign containing target audiences, active budgets, performance analytics.",
+      "type": "object",
+      "properties": {
+        "campaign_id": { "type": "string" },
+        "title": { "type": "string" },
+        "targetSegment": { "type": "string" },
+        "budget": { "type": "number" },
+        "status": { "type": "string", "enum": ["Draft", "Active", "Completed"] },
+        "clicks": { "type": "integer" },
+        "conversations": { "type": "integer" },
+        "revenueGenerated": { "type": "number" }
+      },
+      "required": ["campaign_id", "title", "targetSegment", "budget", "status"]
+    },
+    "SupportTicket": {
+      "title": "Support Ticket",
+      "description": "Customer issues, bugs, and incident tracking.",
+      "type": "object",
+      "properties": {
+        "ticket_id": { "type": "string" },
+        "customer_id": { "type": "string" },
+        "customerName": { "type": "string" },
+        "issue": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High", "Urgent"] },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Resolved"] },
+        "sentiment": { "type": "string", "enum": ["Positive", "Neutral", "Negative", "At Risk"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ticket_id", "customer_id", "issue", "priority", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Users profile collection."
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Enterprise customer collection."
+    },
+    "/marketing_campaigns/{campaignId}": {
+      "schema": "Campaign",
+      "description": "Marketing workflows database."
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Client support tickets collection."
+    }
+  }
+}

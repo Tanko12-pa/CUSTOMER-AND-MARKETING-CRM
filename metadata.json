@@ -1,0 +1,6 @@
+{
+  "name": "CUSTOMER AND MARKETING CRM",
+  "description": "An Earthy-luxury CRM incorporating Deal Risk Modeling, Marketing Campaign Automation, AI Sentiment CX, Multilingual Transcription, and real-time Firestore DB rule simulation.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

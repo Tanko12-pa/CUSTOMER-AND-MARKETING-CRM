@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Auth state helpers
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Fetch the client's actual customer tier document from the database
+    function getUserTier() {
+      return get(/databases/$(database)/documents/customers/$(request.auth.uid)).data.tier;
+    }
+
+    // Secure Customer Profile Rules
+    match /customers/{userId} {
+      // Users can read their own profiles, or admins can read everything
+      allow read: if isAuthenticated() && (request.auth.uid == userId || getUserTier() == "Enterprise");
+
+      // Only allow updates if owner or matching dynamic Enterprise tier
+      allow write: if isAuthenticated() && (
+        (request.auth.uid == userId) || 
+        (getUserTier() == "Enterprise")
+      );
+    }
+
+    // Exclusive Business Marketing Data Analytics Collection Rules
+    match /marketing_campaigns/{campaignId} {
+      // Only users belonging to Premium or Enterprise tiers can review or execute campaign flows
+      allow read, write: if isAuthenticated() && (
+        getUserTier() == "Premium" || 
+        getUserTier() == "Enterprise"
+      );
+    }
+
+    // Incident support Ticket security
+    match /support_tickets/{ticketId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}
