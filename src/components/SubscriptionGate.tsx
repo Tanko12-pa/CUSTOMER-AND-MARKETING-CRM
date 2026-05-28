@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Sparkles, ShieldCheck, Mail, User, CreditCard, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
+import { Sparkles, ShieldCheck, Mail, User, Lock, CreditCard, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
+import { registerWithTrial, signInAndCheckTrial, resetUserPassword } from "../firebase";
 
 interface SubscriptionGateProps {
   onRegisterTrial: (name: string, email: string) => Promise<void>;
@@ -23,6 +24,8 @@ export function SubscriptionGate({
   const [mode, setMode] = useState<"register" | "login">("register");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [localLoading, setLocalLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
 
@@ -39,21 +42,51 @@ export function SubscriptionGate({
       setErrorText("Email address is required.");
       return;
     }
+    if (!password.trim()) {
+      setErrorText("Password is required.");
+      return;
+    }
+    if (password.length < 6) {
+      setErrorText("Password should be at least 6 characters.");
+      return;
+    }
     if (mode === "register" && !name.trim()) {
       setErrorText("Your name is required to start the trial.");
       return;
     }
 
+    setLocalLoading(true);
     try {
       if (mode === "register") {
-        await onRegisterTrial(name, email);
+        await registerWithTrial(name, email, password);
       } else {
-        await onLogin(email);
+        await signInAndCheckTrial(email, password);
       }
     } catch (err: any) {
       setErrorText(err.message || "An authentication anomaly occurred.");
+    } finally {
+      setLocalLoading(false);
     }
   };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setErrorText("Please enter your email address first.");
+      return;
+    }
+    setLocalLoading(true);
+    setErrorText("");
+    try {
+      const msg = await resetUserPassword(email);
+      alert(msg);
+    } catch (err: any) {
+      setErrorText(err.message || "Could not dispatch reset email.");
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const isAuthLoading = loading || localLoading;
 
   const handleSimulatedPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -389,22 +422,49 @@ export function SubscriptionGate({
               </div>
             </div>
 
+            <div>
+              <label className="block text-[10px] uppercase font-mono tracking-wider text-[#A1A1AA] mb-1.5">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-2.5 h-4 w-4 text-[#71717A]" />
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl pl-9 pr-3 py-2 text-xs text-[#E4E4E7] outline-none transition-colors"
+                />
+              </div>
+              {mode === "login" && (
+                <div className="text-right mt-1.5">
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    disabled={isAuthLoading}
+                    className="text-[#C5A059] hover:underline text-[10px] font-mono cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
+            </div>
+
             {mode === "register" ? (
               <button
                 type="submit"
-                disabled={loading}
+                disabled={isAuthLoading}
                 className="w-full bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-[#C5A059]/10 mt-6"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Start 7-Day Free Trial</span>}
+                {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Start 7-Day Free Trial</span>}
                 <ArrowRight className="w-4 h-4" />
               </button>
             ) : (
               <button
                 type="submit"
-                disabled={loading}
+                disabled={isAuthLoading}
                 className="w-full bg-[#141416] border border-[#27272A] hover:bg-white/5 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 cursor-pointer mt-6"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Sign In & Continue Trial</span>}
+                {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Sign In & Continue Trial</span>}
                 <ArrowRight className="w-4 h-4" />
               </button>
             )}

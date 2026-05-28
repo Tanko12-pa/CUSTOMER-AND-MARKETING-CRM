@@ -30,6 +30,9 @@ import { SubscriptionGate } from "./components/SubscriptionGate";
 import { SystemAuditLogs } from "./components/SystemAuditLogs";
 import { MutationsAuditFeed } from "./components/MutationsAuditFeed";
 import { Customer, Campaign, SupportTicket, AuditLog } from "./types";
+import { auth, db } from "./firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"sales" | "marketing" | "support" | "audio" | "database" | "audit">("sales");
@@ -103,70 +106,24 @@ export default function App() {
     }
   };
 
-  const checkSession = async () => {
-    try {
-      setAuthLoading(true);
-      const response = await fetch("/api/auth/session");
-      const data = await response.json();
-      if (data.loggedIn) {
-        setCurrentUser(data.user);
-      } else {
-        setCurrentUser(null);
-      }
-    } catch (e) {
-      console.error("Session check anomaly:", e);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   // Auth, trial, and Stripe session triggers
   const handleRegisterTrial = async (name: string, email: string) => {
-    setAuthLoading(true);
-    try {
-      const response = await fetch("/api/auth/register-trial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCurrentUser(data.user);
-        await syncStateData();
-      } else {
-        throw new Error(data.error || "Failed to register free trial");
-      }
-    } finally {
-      setAuthLoading(false);
-    }
+    console.log("Trial registration handled by client-side Auth module for:", name, email);
   };
 
   const handleLogin = async (email: string) => {
-    setAuthLoading(true);
-    try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCurrentUser(data.user);
-        await syncStateData();
-      } else {
-        throw new Error(data.error || "Failed to find account with this email.");
-      }
-    } finally {
-      setAuthLoading(false);
-    }
+    console.log("Login handled by client-side Auth module for:", email);
   };
 
   const handleLogout = async () => {
     setAuthLoading(true);
     try {
+      await auth.signOut();
       await fetch("/api/auth/logout", { method: "POST" });
       setCurrentUser(null);
       setCheckoutSimulated(null);
+    } catch (e) {
+      console.error("Logout err:", e);
     } finally {
       setAuthLoading(false);
     }
@@ -203,49 +160,66 @@ export default function App() {
         body: JSON.stringify({ email, plan }),
       });
       const data = await response.json();
-      if (data.success) {
-        setCurrentUser(data.user);
+      if (data.success && auth.currentUser) {
+        // Also update Firestore directly
+        const userRef = doc(db, "users", auth.currentUser.uid);
+        await setDoc(userRef, {
+          plan: plan,
+          hasActiveSubscription: true
+        }, { merge: true });
+
+        setCurrentUser((prev: any) => ({
+          ...prev,
+          plan: plan,
+          active: true,
+          subscriptionActive: true
+        }));
         setCheckoutSimulated(null);
         await syncStateData();
       }
+    } catch (e) {
+      console.error("Subscription confirmation error:", e);
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleSimulateExpiration = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.uid) return;
     setAuthLoading(true);
     try {
-      const response = await fetch("/api/auth/simulate-expiration", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: currentUser.email }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCurrentUser(data.user);
-        await syncStateData();
-      }
+      const userRef = doc(db, "users", currentUser.uid);
+      await setDoc(userRef, {
+        trialExpiresAt: Date.now() - 24 * 3600 * 1000, // Expired 1 day ago
+        hasActiveSubscription: false,
+        plan: "none"
+      }, { merge: true });
+
+      // Clean local state and sync
+      await syncStateData();
+    } catch (e) {
+      console.error("Simulation error:", e);
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleSimulateRestoreTrial = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.uid) return;
     setAuthLoading(true);
     try {
-      const response = await fetch("/api/auth/simulate-restore-trial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: currentUser.email }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCurrentUser(data.user);
-        await syncStateData();
-      }
+      const userRef = doc(db, "users", currentUser.uid);
+      const trialDuration = 7 * 24 * 60 * 60 * 1000;
+      await setDoc(userRef, {
+        trialExpiresAt: Date.now() + trialDuration,
+        hasActiveSubscription: false,
+        plan: "trial"
+      }, { merge: true });
+
+      // Sync state and finish
+      await syncStateData();
+    } catch (e) {
+      console.error("Restore trial simulation error:", e);
     } finally {
       setAuthLoading(false);
     }
@@ -270,7 +244,70 @@ export default function App() {
     }
 
     syncStateData();
-    checkSession();
+
+    // Firebase Auth State listener
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setAuthLoading(true);
+      if (firebaseUser) {
+        try {
+          const userRef = doc(db, "users", firebaseUser.uid);
+          const userDoc = await getDoc(userRef);
+          
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            const trialExpiresAt = data.trialExpiresAt;
+            const hasActiveSubscription = data.hasActiveSubscription || data.plan === "monthly" || data.plan === "yearly";
+            const isExpired = Date.now() > trialExpiresAt;
+            const userPlan = (data.plan as "trial" | "monthly" | "yearly" | "none") || "trial";
+            const trialDaysLeft = Math.max(0, (trialExpiresAt - Date.now()) / (1000 * 3600 * 24));
+
+            setCurrentUser({
+              email: firebaseUser.email,
+              name: data.name || firebaseUser.displayName || "",
+              uid: firebaseUser.uid,
+              trialStartDate: new Date(trialExpiresAt - 7 * 24 * 3600 * 1000).toISOString(),
+              plan: userPlan,
+              active: hasActiveSubscription || !isExpired,
+              trialDaysLeft: trialDaysLeft,
+              subscriptionActive: hasActiveSubscription
+            });
+          } else {
+            // First time register doc sync fallback
+            const trialDuration = 7 * 24 * 60 * 60 * 1000;
+            const trialExpiresAt = Date.now() + trialDuration;
+            const userData = {
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
+              email: firebaseUser.email || "",
+              trialExpiresAt: trialExpiresAt,
+              hasActiveSubscription: false,
+              plan: "trial"
+            };
+            await setDoc(userRef, userData);
+            setCurrentUser({
+              email: firebaseUser.email,
+              name: userData.name,
+              uid: firebaseUser.uid,
+              trialStartDate: new Date(trialExpiresAt - 7 * 24 * 3600 * 1000).toISOString(),
+              plan: "trial",
+              active: true,
+              trialDaysLeft: 7,
+              subscriptionActive: false
+            });
+          }
+        } catch (err) {
+          console.error("Firestore user sync error:", err);
+          setCurrentUser(null);
+        } finally {
+          setAuthLoading(false);
+        }
+      } else {
+        setCurrentUser(null);
+        setAuthLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Post changes to state server

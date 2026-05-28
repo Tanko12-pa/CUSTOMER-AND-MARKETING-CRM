@@ -1,17 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // TEMPORARY TESTING ONLY (Allows anyone to read/write for development)
-    match /{document=**} {
-      allow read, write: if true;
+    match /users/{userId} {
+      // Users can only read and write their own account profiles
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    
-    /* 
-    PRODUCTION RECOMMENDED: Only allow authenticated users
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-    */
   }
 }
