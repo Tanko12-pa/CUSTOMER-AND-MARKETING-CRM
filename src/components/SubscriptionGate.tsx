@@ -185,9 +185,15 @@ export function SubscriptionGate({
             </button>
           </form>
 
-          <p className="text-[10px] text-[#71717A] text-center mt-6 font-mono">
+          <p className="text-[10px] text-[#71717A] text-center mt-6 font-mono leading-relaxed">
             🛡️ Encrypted via Stripe SSL. All payment configurations are executed server-side.
           </p>
+          <div className="flex items-center justify-between text-[9px] text-[#A1A1AA] bg-[#0A0A0B] border border-[#27272A] px-2.5 py-1.5 rounded-lg w-full font-mono mt-3 select-all">
+            <span>💳 KEY:</span>
+            <span className="text-white font-bold opacity-80" title="Stripe Live Publishable Key">
+              {import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva"}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -444,10 +450,16 @@ export function SubscriptionGate({
           <div className="text-left font-sans">
             <p className="text-[10px] text-white uppercase font-bold tracking-wider font-mono">Premium Plans Available</p>
             <p className="text-[11px] text-[#A1A1AA] mt-0.5">Upgrade anytime starting at $19.99/mo</p>
+            <div className="mt-1.5 flex items-center gap-1.5 text-[8.5px] font-mono text-[#D4D4D8]">
+              <span className="text-[#C5A059] font-bold">💳 Stripe PubKey:</span>
+              <span className="bg-white/5 border border-white/10 px-1 py-0.2 rounded truncate max-w-[130px]" title="pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva">
+                {import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva"}
+              </span>
+            </div>
           </div>
           <div className="flex space-x-2 text-[10px] font-mono shrink-0">
-            <span className="px-2.5 py-1 bg-[#141416] border border-[#27272A] rounded text-[#A1A1AA] font-bold">Monthly: $19.99</span>
-            <span className="px-2.5 py-1 bg-[#121214] border border-[#C5A059]/30 rounded text-[#C5A059] font-bold">Yearly: $199.99</span>
+            <span className="px-2.5 py-1 bg-[#141416] border border-[#27272A] rounded text-[#A1A1AA] font-bold font-semibold">Monthly: $19.99</span>
+            <span className="px-2.5 py-1 bg-[#121214] border border-[#C5A059]/30 rounded text-[#C5A059] font-bold font-semibold">Yearly: $199.99</span>
           </div>
         </div>
 

@@ -6,6 +6,17 @@ export type TicketPriority = "Low" | "Medium" | "High" | "Urgent";
 export type TicketStatus = "Open" | "In Progress" | "Resolved";
 export type CampaignStatus = "Draft" | "Active" | "Completed";
 
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_STRIPE_PUBLISHABLE_KEY?: string;
+    readonly [key: string]: any;
+  }
+
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
+}
+
 export interface User {
   user_id: string;
   name: string;

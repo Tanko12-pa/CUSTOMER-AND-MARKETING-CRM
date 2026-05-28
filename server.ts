@@ -4,10 +4,40 @@ import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import Stripe from "stripe";
+import fs from "fs";
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore, 
+  collection, 
+  getDocs, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where 
+} from "firebase/firestore";
 
 dotenv.config();
 
 const app = express();
+
+// Initialize Firebase App & Firestore Backend Connections
+let db: any = null;
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const firebaseApp = initializeApp(firebaseConfig);
+    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+    console.log("SUCCESS: Unified Firebase Backend integrated and database connected.");
+  } else {
+    console.warn("WARNING: firebase-applet-config.json not found on server root filesystem.");
+  }
+} catch (error) {
+  console.error("CRITICAL: Failed to initialize Firebase backend engine:", error);
+}
 
 // Conditional body parsing: raw body for Stripe webhooks, json for everything else
 app.use((req, res, next) => {
@@ -216,7 +246,7 @@ let mockAuditLogs = [
 
 // Helper to record audit logs
 function addAudit(action: string, collection: string, details: string, user: string = "akindewum@gmail.com", statusStr: "Success" | "Failed" = "Success") {
-  mockAuditLogs.unshift({
+  const newLog = {
     id: `log_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     timestamp: new Date().toISOString(),
     action,
@@ -224,7 +254,13 @@ function addAudit(action: string, collection: string, details: string, user: str
     user,
     status: statusStr,
     details
-  });
+  };
+  mockAuditLogs.unshift(newLog);
+  if (db) {
+    setDoc(doc(db, "audit_logs", newLog.id), newLog).catch(err => {
+      console.error("Failed to write audit log to Firestore:", err);
+    });
+  }
 }
 
 interface CRMUser {
@@ -315,6 +351,11 @@ app.post("/api/auth/register-trial", (req, res) => {
       };
       mockUsersList.push(newUser);
       currentUserSession = newUser;
+      if (db) {
+        setDoc(doc(db, "users", cleanEmail), newUser).catch(err => {
+          console.error("Failed to write new user to Firestore:", err);
+        });
+      }
     }
 
     const diagnostic = checkUserAccess(currentUserSession);
@@ -391,6 +432,11 @@ app.post("/api/auth/confirm-subscription", (req, res) => {
       if (currentUserSession?.email.toLowerCase() === cleanEmail) {
         currentUserSession = mockUsersList[userIndex];
       }
+      if (db) {
+        setDoc(doc(db, "users", cleanEmail), mockUsersList[userIndex]).catch(err => {
+          console.error("Failed to write subscription update to Firestore:", err);
+        });
+      }
       
       const diagnostic = checkUserAccess(mockUsersList[userIndex]);
       addAudit("SUBSCRIPTION_ACTIVATED", "users", `User successfully activated ${plan} tier: ${cleanEmail}`);
@@ -428,6 +474,11 @@ app.post("/api/auth/simulate-expiration", (req, res) => {
       if (currentUserSession?.email.toLowerCase() === cleanEmail) {
         currentUserSession = mockUsersList[userIndex];
       }
+      if (db) {
+        setDoc(doc(db, "users", cleanEmail), mockUsersList[userIndex]).catch(err => {
+          console.error("Failed to write simulated expiration to Firestore:", err);
+        });
+      }
       
       const diagnostic = checkUserAccess(mockUsersList[userIndex]);
       addAudit("SIMULATED_TRIAL_EXPIRATION", "users", `DevConsole: Fast-forwarded timezone clocks to force trial expiration for ${cleanEmail}`);
@@ -463,6 +514,11 @@ app.post("/api/auth/simulate-restore-trial", (req, res) => {
       
       if (currentUserSession?.email.toLowerCase() === cleanEmail) {
         currentUserSession = mockUsersList[userIndex];
+      }
+      if (db) {
+        setDoc(doc(db, "users", cleanEmail), mockUsersList[userIndex]).catch(err => {
+          console.error("Failed to write simulated trial restore to Firestore:", err);
+        });
       }
 
       const diagnostic = checkUserAccess(mockUsersList[userIndex]);
@@ -538,7 +594,38 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
 });
 
 // REST Api to retrieve current state
-app.get("/api/state", (req, res) => {
+app.get("/api/state", async (req, res) => {
+  if (db) {
+    try {
+      const customersSn = await getDocs(collection(db, "customers"));
+      mockCustomers = [];
+      customersSn.forEach(d => {
+        mockCustomers.push(d.data() as any);
+      });
+
+      const campaignsSn = await getDocs(collection(db, "marketing_campaigns"));
+      mockCampaigns = [];
+      campaignsSn.forEach(d => {
+        mockCampaigns.push(d.data() as any);
+      });
+
+      const ticketsSn = await getDocs(collection(db, "support_tickets"));
+      mockSupportTickets = [];
+      ticketsSn.forEach(d => {
+        mockSupportTickets.push(d.data() as any);
+      });
+
+      const logsSn = await getDocs(collection(db, "audit_logs"));
+      mockAuditLogs = [];
+      logsSn.forEach(d => {
+        mockAuditLogs.push(d.data() as any);
+      });
+      mockAuditLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    } catch (err) {
+      console.error("Failed to refresh state from Firestore:", err);
+    }
+  }
+
   res.json({
     customers: mockCustomers,
     campaigns: mockCampaigns,
@@ -548,7 +635,7 @@ app.get("/api/state", (req, res) => {
 });
 
 // REST Api to update user metadata or state
-app.post("/api/update-state", (req, res) => {
+app.post("/api/update-state", async (req, res) => {
   try {
     const { type, payload } = req.body;
     
@@ -575,6 +662,9 @@ app.post("/api/update-state", (req, res) => {
       }
 
       mockCustomers.push(newCust);
+      if (db) {
+        await setDoc(doc(db, "customers", newCust.uid), newCust);
+      }
       addAudit("CREATE_RECORD", "customers", `Added customer ${newCust.name} (${newCust.email})`);
     } else if (type === "UPDATE_CUSTOMER") {
       const idx = mockCustomers.findIndex(c => c.uid === payload.uid);
@@ -587,6 +677,9 @@ app.post("/api/update-state", (req, res) => {
         if (mockCustomers[idx].sentiment === "Negative") {
           mockCustomers[idx].dealRiskStatus = "At Risk: Negative Sentiment";
         }
+        if (db) {
+          await setDoc(doc(db, "customers", payload.uid), mockCustomers[idx]);
+        }
         addAudit("UPDATE_RECORD", "customers", `Updated customer ${mockCustomers[idx].name}`);
       }
     } else if (type === "DELETE_CUSTOMERS") {
@@ -594,6 +687,11 @@ app.post("/api/update-state", (req, res) => {
       const originalCount = mockCustomers.length;
       mockCustomers = mockCustomers.filter(c => !uidsToDelete.includes(c.uid));
       const deletedCount = originalCount - mockCustomers.length;
+      if (db) {
+        for (const uid of uidsToDelete) {
+          await deleteDoc(doc(db, "customers", uid));
+        }
+      }
       addAudit("DELETE_RECORDS", "customers", `Bulk deleted ${deletedCount} customer profile(s) via database admin console.`);
     } else if (type === "ADD_TICKET") {
       const customer = mockCustomers.find(c => c.uid === payload.customer_id);
@@ -608,11 +706,17 @@ app.post("/api/update-state", (req, res) => {
         createdAt: new Date().toISOString()
       };
       mockSupportTickets.push(newTicket);
+      if (db) {
+        await setDoc(doc(db, "support_tickets", newTicket.ticket_id), newTicket);
+      }
       
       // If negative ticket sentiment, auto mark customer sentiment as at risk
       if (customer && newTicket.sentiment === "Negative") {
         customer.sentiment = "Negative" as const;
         customer.dealRiskStatus = "At Risk: Active Negative Support Ticket";
+        if (db) {
+          await setDoc(doc(db, "customers", customer.uid), customer);
+        }
       }
       
       addAudit("CREATE_RECORD", "support_tickets", `Added support ticket for ${newTicket.customerName}`);
@@ -623,6 +727,9 @@ app.post("/api/update-state", (req, res) => {
         mockCampaigns[idx].clicks += 150;
         mockCampaigns[idx].conversations += 20;
         mockCampaigns[idx].revenueGenerated += 5000;
+        if (db) {
+          await setDoc(doc(db, "marketing_campaigns", payload.campaign_id), mockCampaigns[idx]);
+        }
         addAudit("LAUNCH_CAMPAIGN", "marketing_campaigns", `Enrolled segment and launched campaign "${mockCampaigns[idx].title}"`);
       }
     } else if (type === "ADD_CAMPAIGN") {
@@ -637,11 +744,17 @@ app.post("/api/update-state", (req, res) => {
         revenueGenerated: 0
       };
       mockCampaigns.push(newCamp);
+      if (db) {
+        await setDoc(doc(db, "marketing_campaigns", newCamp.campaign_id), newCamp);
+      }
       addAudit("CREATE_RECORD", "marketing_campaigns", `Created marketing campaign draft "${newCamp.title}"`);
     } else if (type === "ESCALATE_DEAL") {
       const idx = mockCustomers.findIndex(c => c.uid === payload.uid);
       if (idx !== -1) {
         mockCustomers[idx].dealRiskStatus = "Escalated";
+        if (db) {
+          await setDoc(doc(db, "customers", payload.uid), mockCustomers[idx]);
+        }
         addAudit("DEAL_ESCALATED", "customers", `Manager escalation initiated: ${mockCustomers[idx].name}. Risk marked Escalated. Subject line draft generated.`);
       }
     }
@@ -1008,12 +1121,114 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 // Lookup function checking status of logged-in trial or subscribed users in mock CRM database
 async function checkUserSubscriptionStatus(userId: string): Promise<boolean> {
-  const user = mockUsersList.find(u => u.email.toLowerCase() === userId.toLowerCase());
+  let user = mockUsersList.find(u => u.email.toLowerCase() === userId.toLowerCase());
+  if (!user && db) {
+    try {
+      const userDoc = await getDoc(doc(db, "users", userId.toLowerCase()));
+      if (userDoc.exists()) {
+        user = userDoc.data() as CRMUser;
+        mockUsersList.push(user);
+      }
+    } catch (err) {
+      console.error("Failed to read user from Firestore for subscription check:", err);
+    }
+  }
   if (!user) return false;
   
   // Reuse core validation engine
   const diagnostic = checkUserAccess(user);
   return diagnostic.active;
+}
+
+// Master synchronized loader to seat Firestore tables
+async function syncFirestoreData() {
+  if (!db) {
+    console.log("No Firebase database available for synchronization. Continuing with memory backend.");
+    return;
+  }
+  try {
+    console.log("Synchronizing Firestore collections...");
+    
+    // 1. Users
+    const usersCollection = collection(db, "users");
+    const usersSnapshot = await getDocs(usersCollection);
+    if (usersSnapshot.empty) {
+      console.log("Firestore empty: Seeding users...");
+      for (const u of mockUsersList) {
+        await setDoc(doc(db, "users", u.email.toLowerCase()), u);
+      }
+    } else {
+      mockUsersList = [];
+      usersSnapshot.forEach(docSnap => {
+        mockUsersList.push(docSnap.data() as any);
+      });
+    }
+
+    // 2. Customers
+    const customersCollection = collection(db, "customers");
+    const customersSnapshot = await getDocs(customersCollection);
+    if (customersSnapshot.empty) {
+      console.log("Firestore empty: Seeding customers...");
+      for (const c of mockCustomers) {
+        await setDoc(doc(db, "customers", c.uid), c);
+      }
+    } else {
+      mockCustomers = [];
+      customersSnapshot.forEach(docSnap => {
+        mockCustomers.push(docSnap.data() as any);
+      });
+    }
+
+    // 3. Campaigns
+    const campaignsCollection = collection(db, "marketing_campaigns");
+    const campaignsSnapshot = await getDocs(campaignsCollection);
+    if (campaignsSnapshot.empty) {
+      console.log("Firestore empty: Seeding marketing campaigns...");
+      for (const camp of mockCampaigns) {
+        await setDoc(doc(db, "marketing_campaigns", camp.campaign_id), camp);
+      }
+    } else {
+      mockCampaigns = [];
+      campaignsSnapshot.forEach(docSnap => {
+        mockCampaigns.push(docSnap.data() as any);
+      });
+    }
+
+    // 4. Support Tickets
+    const ticketsCollection = collection(db, "support_tickets");
+    const ticketsSnapshot = await getDocs(ticketsCollection);
+    if (ticketsSnapshot.empty) {
+      console.log("Firestore empty: Seeding support tickets...");
+      for (const ticket of mockSupportTickets) {
+        await setDoc(doc(db, "support_tickets", ticket.ticket_id), ticket);
+      }
+    } else {
+      mockSupportTickets = [];
+      ticketsSnapshot.forEach(docSnap => {
+        mockSupportTickets.push(docSnap.data() as any);
+      });
+    }
+
+    // 5. Audit Logs
+    const logsCollection = collection(db, "audit_logs");
+    const logsSnapshot = await getDocs(logsCollection);
+    if (logsSnapshot.empty) {
+      console.log("Firestore empty: Seeding audit logs...");
+      for (const log of mockAuditLogs) {
+        await setDoc(doc(db, "audit_logs", log.id), log);
+      }
+    } else {
+      mockAuditLogs = [];
+      logsSnapshot.forEach(docSnap => {
+        mockAuditLogs.push(docSnap.data() as any);
+      });
+      mockAuditLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }
+
+    console.log("Cloud Firestore CRM database successfully fully synchronized.");
+  } catch (err) {
+    console.error("Warning: Error syncing with Firestore database collections:", err);
+  }
 }
 
 // --- 3. PROTECTED AI GENERATION ENDPOINT ---
@@ -1051,6 +1266,8 @@ app.post('/api/generate-content', async (req, res) => {
 
 // Configure Vite middleware in development
 async function startServer() {
+  await syncFirestoreData();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
