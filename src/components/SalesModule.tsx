@@ -18,7 +18,9 @@ import {
   Clock,
   Printer,
   Mail,
-  FileText
+  FileText,
+  Search,
+  X
 } from "lucide-react";
 
 interface SalesModuleProps {
@@ -29,6 +31,7 @@ interface SalesModuleProps {
 
 export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }: SalesModuleProps) {
   const [filterType, setFilterType] = useState<"all" | "high-risk" | "enterprise" | "in-progress">("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedUid, setSelectedUid] = useState<string>(customers[0]?.uid || "");
   const [dealValue, setDealValue] = useState<number>(55000);
   const [lastInteraction, setLastInteraction] = useState<number>(5);
@@ -206,9 +209,17 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
     }
   };
 
-  // Filter customers by selected quick-filter criteria
+  // Filter customers by selected quick-filter criteria & real-time search query
   const filteredCustomers = useMemo(() => {
     return customers.filter(c => {
+      // Real-time search query matching name or email
+      if (searchQuery.trim() !== "") {
+        const query = searchQuery.toLowerCase().trim();
+        const matchesName = c.name?.toLowerCase().includes(query);
+        const matchesEmail = c.email?.toLowerCase().includes(query);
+        if (!matchesName && !matchesEmail) return false;
+      }
+
       if (filterType === "all") return true;
       if (filterType === "high-risk") {
         return c.dealRiskStatus.toLowerCase().includes("high") || 
@@ -224,7 +235,7 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
       }
       return true;
     });
-  }, [customers, filterType]);
+  }, [customers, filterType, searchQuery]);
 
   // Compute active customer context safely
   const activeCustomer = useMemo(() => {
@@ -798,6 +809,36 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* REAL-TIME SEARCH COMPONENT */}
+            <div className="space-y-1.5" id="real-time-prospect-search">
+              <label htmlFor="prospect-search-field" className="block text-[10px] uppercase font-mono tracking-wider text-[#A1A1AA] font-bold">
+                Search Accounts
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-3.5 w-3.5 text-zinc-500" />
+                </div>
+                <input
+                  id="prospect-search-field"
+                  type="text"
+                  placeholder="Filter by name or email address..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-xl pl-9.5 pr-8.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-[#C5A059] focus:border-[#C5A059] transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-zinc-400 hover:text-white transition-all cursor-pointer"
+                    title="Clear search query"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             </div>
 

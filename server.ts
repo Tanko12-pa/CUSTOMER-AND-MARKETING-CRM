@@ -334,30 +334,33 @@ let mockCampaigns = [
     title: "Project Golden Wave Re-activation",
     targetSegment: "Inactive 30 Days",
     budget: 8500,
-    status: "Active" as const,
+    status: "Active" as "Draft" | "Active" | "Completed",
     clicks: 1420,
     conversations: 310,
     revenueGenerated: 62000,
+    revenueTargetGoal: 70000,
   },
   {
     campaign_id: "camp_2",
     title: "Enterprise Upgrade Masterclass",
     targetSegment: "High-Value Tier",
     budget: 15000,
-    status: "Active" as const,
+    status: "Active" as "Draft" | "Active" | "Completed",
     clicks: 2800,
     conversations: 520,
     revenueGenerated: 185000,
+    revenueTargetGoal: 200000,
   },
   {
     campaign_id: "camp_3",
     title: "New Signups Onboarding Sweep",
     targetSegment: "New Signups",
     budget: 3000,
-    status: "Draft" as const,
+    status: "Draft" as "Draft" | "Active" | "Completed",
     clicks: 0,
     conversations: 0,
     revenueGenerated: 0,
+    revenueTargetGoal: 10000,
   }
 ];
 
@@ -959,27 +962,56 @@ app.post("/api/update-state", async (req, res) => {
         mockCampaigns[idx].clicks += 150;
         mockCampaigns[idx].conversations += 20;
         mockCampaigns[idx].revenueGenerated += 5000;
+        
+        const goal = mockCampaigns[idx].revenueTargetGoal || (mockCampaigns[idx].budget * 2.5);
+        if (mockCampaigns[idx].revenueGenerated >= goal) {
+          mockCampaigns[idx].status = "Completed";
+          addAudit("CAMPAIGN_AUTO_COMPLETED", "marketing_campaigns", `Campaign "${mockCampaigns[idx].title}" hit target goal of $${goal.toLocaleString()}! Reclassified status to Completed.`);
+        } else {
+          addAudit("LAUNCH_CAMPAIGN", "marketing_campaigns", `Enrolled segment and launched campaign "${mockCampaigns[idx].title}"`);
+        }
+        
         if (db) {
           await setDoc(doc(db, "marketing_campaigns", payload.campaign_id), mockCampaigns[idx]);
         }
-        addAudit("LAUNCH_CAMPAIGN", "marketing_campaigns", `Enrolled segment and launched campaign "${mockCampaigns[idx].title}"`);
+      }
+    } else if (type === "SIMULATE_REVENUE_GAIN") {
+      const idx = mockCampaigns.findIndex(camp => camp.campaign_id === payload.campaign_id);
+      if (idx !== -1) {
+        mockCampaigns[idx].clicks += 75;
+        mockCampaigns[idx].conversations += 12;
+        mockCampaigns[idx].revenueGenerated += 5000;
+        
+        const goal = mockCampaigns[idx].revenueTargetGoal || (mockCampaigns[idx].budget * 2.5);
+        if (mockCampaigns[idx].revenueGenerated >= goal) {
+          mockCampaigns[idx].status = "Completed";
+          addAudit("CAMPAIGN_AUTO_COMPLETED", "marketing_campaigns", `Campaign "${mockCampaigns[idx].title}" met target limit of $${goal.toLocaleString()}! Transformed status to Completed.`);
+        } else {
+          addAudit("SIMULATE_REVENUE_GAIN", "marketing_campaigns", `Simulated additional revenue conversion for "${mockCampaigns[idx].title}" (+$5,000 generated revenue).`);
+        }
+        
+        if (db) {
+          await setDoc(doc(db, "marketing_campaigns", payload.campaign_id), mockCampaigns[idx]);
+        }
       }
     } else if (type === "ADD_CAMPAIGN") {
+      const budgetVal = Number(payload.budget) || 1000;
       const newCamp = {
         campaign_id: `camp_${Date.now()}`,
         title: payload.title,
         targetSegment: payload.targetSegment || "New Signups",
-        budget: Number(payload.budget) || 1000,
+        budget: budgetVal,
         status: "Draft" as const,
         clicks: 0,
         conversations: 0,
-        revenueGenerated: 0
+        revenueGenerated: 0,
+        revenueTargetGoal: Number(payload.revenueTargetGoal) || (budgetVal * 2.5)
       };
       mockCampaigns.push(newCamp);
       if (db) {
         await setDoc(doc(db, "marketing_campaigns", newCamp.campaign_id), newCamp);
       }
-      addAudit("CREATE_RECORD", "marketing_campaigns", `Created marketing campaign draft "${newCamp.title}"`);
+      addAudit("CREATE_RECORD", "marketing_campaigns", `Created marketing campaign draft "${newCamp.title}" with target goal of $${newCamp.revenueTargetGoal.toLocaleString()}`);
     } else if (type === "ESCALATE_DEAL") {
       const idx = mockCustomers.findIndex(c => c.uid === payload.uid);
       if (idx !== -1) {
@@ -1172,45 +1204,53 @@ app.post("/api/gemini/detect-churn", async (req, res) => {
 
 app.post("/api/gemini/campaign-builder", async (req, res) => {
   try {
-    const { audience, offer, mix, tone, language, persona, useSearch } = req.body;
+    const { audience, offer, mix, tone, language, persona, useSearch, theme, segment } = req.body;
+    
+    const finalAudience = audience || segment || "Inactive 30 Days";
+    const finalTone = tone || "Professional";
+    const finalTheme = theme || offer || "General campaign outreach";
     
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
       const mockCampaignOutput = {
+        subjectLine: `🚀 [${finalTone}] Special Offer for our ${finalAudience}`,
+        blastHtml: `Dear Customer,\n\nWe are pleased to introduce our latest updates. Tailored in a ${finalTone} tone specifically for our ${finalAudience} segment, we guarantee low-latency telemetry security.\n\nDirective description: ${finalTheme}\n\nBest regards,\nYour Growth Team`,
+        smsPush: `SMS [${finalTone}]: Get instant secured access regarding ${finalTheme}. Reply YES to sign up!`,
+        socialCopy: `Check out our latest ${finalAudience} campaign! Handcrafted with an emphasis on being ${finalTone}. #growth #telemetry`,
+        rationale: `Strategy: We leveraged an intensive ${finalTone} appeal to engage the ${finalAudience} cohort and prompt lead score uplift.`,
         emails: {
-          welcome: `Subject: Welcome to the Future of Security [${language}]\n\nHello, we are excited to have you onboard. As a leading player in the ${audience} space, you will benefit from our special product: ${offer}. This represents a unique milestone towards compliance.`,
-          nurture: `Subject: Unlocking full potential and scalability [${language}]\n\nDid you know that teams utilizing our specialized solution (${offer}) experience a 50% decrease in integration delays? Let's discuss details.`,
-          reactivation: `Subject: Special offer for your sandbox telemetry [${language}]\n\nWe noticed a brief pause in your sandbox audit logs. To assist reactivation, here is a custom voucher for ${offer} today.`
+          welcome: `Subject: Welcome to the Future of Security [${language || 'en'}]\n\nHello, we are excited to have you onboard. As a leading player in the ${finalAudience} space, you will benefit from our special product: ${finalTheme}. This represents a unique milestone towards compliance.`,
+          nurture: `Subject: Unlocking full potential and scalability [${language || 'en'}]\n\nDid you know that teams utilizing our specialized solution (${finalTheme}) experience a 50% decrease in integration delays? Let's discuss details.`,
+          reactivation: `Subject: Special offer for your sandbox telemetry [${language || 'en'}]\n\nWe noticed a brief pause in your sandbox audit logs. To assist reactivation, here is a custom voucher for ${finalTheme} today.`
         },
         ads: {
-          search: `Special Offer: ${offer} for ${audience}. Secure, scalable, with robust D3 telemetry built in.`,
-          display: `Empowering ${persona || "Enterprise"} Teams - Secure ${offer} sandbox integration.`,
-          social: `Are you a ${persona || "Budget-conscious manager"} looking to automate? Integrate our latest ${offer} and simplify auditing.`
+          search: `Special Offer: ${finalTheme} for ${finalAudience}. Secure, scalable, with robust telemetry built in.`,
+          display: `Empowering ${persona || "Enterprise"} Teams - Secure ${finalTheme} sandbox integration.`,
+          social: `Are you a ${persona || "Budget-conscious manager"} looking to automate? Integrate our latest ${finalTheme} and simplify auditing.`
         },
         landingPage: {
-          headline: `Automate Your Production Compliance with ${offer}`,
-          valueProp: `Engineered specifically for the needs of ${audience}, enabling instant SOC2 auditing and low-latency API streams.`,
-          faqs: `Q: Is ${offer} fully GDPR compliant?\nA: Yes, certified and validated across all EMEA and APAC regional datastores.`,
-          cta: `Start Your ${offer} 30-Day Evaluation`
+          headline: `Automate Your Production Compliance with ${finalTheme}`,
+          valueProp: `Engineered specifically for the needs of ${finalAudience}, enabling instant SOC2 auditing and low-latency API streams.`,
+          faqs: `Q: Is ${finalTheme} fully GDPR compliant?\nA: Yes, certified and validated across all EMEA and APAC regional datastores.`,
+          cta: `Start Your ${finalTheme} 30-Day Evaluation`
         },
-        shortMessages: `SMS: Urgent! Get instant secure access to our customized offer: ${offer}. Reply YES to consult our rep.`,
+        shortMessages: `SMS: Urgent! Get instant secure access to our customized offer: ${finalTheme}. Reply YES to consult our rep.`,
         abTests: [
-          { variant: "Variant A (Benefit-led)", hypothesis: `Focusing on the high-availability and security of '${offer}' will yield 22% higher conversions for enterprise decision-makers.` },
-          { variant: "Variant B (Urgency-led)", hypothesis: `Using a limited-time trial expiration badge for ${offer} will increase click conversion rates among mobile users by 12%.` }
+          { variant: "Variant A (Benefit-led)", hypothesis: `Focusing on the high-availability and security of '${finalTheme}' will yield 22% higher conversions for enterprise decision-makers.` },
+          { variant: "Variant B (Urgency-led)", hypothesis: `Using a limited-time trial expiration badge for ${finalTheme} will increase click conversion rates among mobile users by 12%.` }
         ]
       };
       return res.json(mockCampaignOutput);
     }
     
     const ai = getGeminiClient();
-    const systemPrompt = "You are an avant-garde chief of growth marketing. Given a campaign brief, you write comprehensive content assets. Return response strictly in JSON matching the specified schema. Output content in the requested language translated perfectly.";
+    const systemPrompt = "You are an avant-garde chief of growth marketing. Given a campaign brief, theme, target segment, and tone, you write comprehensive content assets. Return response strictly in JSON matching the specified schema. Output content in the requested language translated perfectly.";
     const prompt = `Compose a marketing campaign with these parameters:
-      - Target Audience: ${audience}
-      - Special Offer: ${offer}
-      - Channel Mix: ${mix}
-      - Copy Tone: ${tone}
-      - Language: ${language}
-      - Target Persona: ${persona}
+      - Topic/Theme Directive: ${finalTheme}
+      - Target Segment: ${finalAudience}
+      - Copy Tone: ${finalTone}
+      - Language: ${language || "English"}
+      - Target Persona: ${persona || "Customer"}
       - Use Google Search Grounding: ${useSearch ? 'True' : 'False'}`;
     
     const response = await ai.models.generateContent({
@@ -1223,6 +1263,11 @@ app.post("/api/gemini/campaign-builder", async (req, res) => {
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            subjectLine: { type: Type.STRING },
+            blastHtml: { type: Type.STRING },
+            smsPush: { type: Type.STRING },
+            socialCopy: { type: Type.STRING },
+            rationale: { type: Type.STRING },
             emails: {
               type: Type.OBJECT,
               properties: {
@@ -1264,7 +1309,7 @@ app.post("/api/gemini/campaign-builder", async (req, res) => {
               }
             }
           },
-          required: ["emails", "ads", "landingPage", "shortMessages", "abTests"]
+          required: ["subjectLine", "blastHtml", "smsPush", "socialCopy", "rationale", "emails", "ads", "landingPage", "shortMessages", "abTests"]
         }
       }
     });
@@ -1483,7 +1528,317 @@ Configure the **Earthy Luxe Comfort controls** via the buttons panel to trigger 
   }
 });
 
+// Helper to provide a dense context of active CRM databases for specialist agents
+function getCRMSummaryContext() {
+  const customerCount = mockCustomers.length;
+  const campaignCount = mockCampaigns.length;
+  const ticketCount = mockSupportTickets.length;
+  
+  const highRiskCustomers = mockCustomers.filter(c => c.winProbability < 50 || (c.dealRiskStatus && c.dealRiskStatus.toLowerCase().includes("risk")));
+  const activeCampaigns = mockCampaigns.filter(c => c.status === "Active");
+  const openTickets = mockSupportTickets.filter(t => (t.status as string) !== "Resolved");
+
+  return {
+    stats: {
+      totalCustomers: customerCount,
+      totalCampaigns: campaignCount,
+      totalTickets: ticketCount,
+      highRiskCount: highRiskCustomers.length,
+      activeCampaignsCount: activeCampaigns.length,
+      openTicketsCount: openTickets.length
+    },
+    customersSnippet: mockCustomers.map(c => ({
+      name: c.name,
+      lifecycleStage: c.lifecycleStage,
+      tier: c.tier,
+      leadScore: c.leadScore,
+      lifetimeValue: c.lifetimeValue,
+      dealRiskStatus: c.dealRiskStatus,
+      winProbability: c.winProbability,
+      assignedRep: c.assignedRep
+    })),
+    campaignsSnippet: mockCampaigns.map(c => ({
+      title: c.title,
+      targetSegment: c.targetSegment,
+      status: c.status,
+      budget: c.budget,
+      revenueGenerated: c.revenueGenerated,
+      revenueTargetGoal: c.revenueTargetGoal
+    })),
+    ticketsSnippet: mockSupportTickets.map(t => ({
+      customerName: t.customerName,
+      issue: t.issue,
+      priority: t.priority,
+      status: t.status,
+      sentiment: t.sentiment
+    }))
+  };
+}
+
+// RESTful AI-Powered Multi-Agent Hub Endpoint 
+app.post("/api/agents/hub", async (req, res) => {
+  try {
+    const { prompt, mode, useSearch } = req.body;
+    const dbContext = getCRMSummaryContext();
+    const apiKey = process.env.GEMINI_API_KEY;
+    const hasApiKey = apiKey && apiKey !== "MOCK_KEY" && apiKey !== "";
+
+    // 1. INTENT ORCHESTRATION & ROUTING STEP
+    let targetAgent: "tutor" | "sales" | "marketing" | "support" = "tutor";
+    let confidence = 1.0;
+    let rationale = "Directly selected by the CRM operator.";
+
+    if (mode === "orchestrator") {
+      if (hasApiKey) {
+        try {
+          const ai = getGeminiClient();
+          const classificationPrompt = `
+Analyze this CRM operator query:
+"${prompt}"
+
+Determine which of the four specialized CRM agents is the single best fit to process this prompt:
+- tutor: Choose this for general product training, explanations, guides on how features work, or questions about Firestore simulation and subscription tiers.
+- sales: Choose this for prospect leads, pipelines, contract values, upsells, scoring, deal risks, or reps.
+- marketing: Choose this for campaigns, newsletter email copies, social posts, coupons, budget goals, or target segment performance.
+- support: Choose this for helpdesk issues, customer complaints, FAQ troubleshooting guides, or technical ticket replies.
+
+Respond strictly in this JSON format (no other introduction, formatting, or extra text):
+{
+  "agent": "tutor" | "sales" | "marketing" | "support",
+  "confidence": <number between 0.1 and 1.0>,
+  "rationale": "<brief explanation of why this agent was selected>"
+}
+`;
+          const routingResponse = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: classificationPrompt,
+            config: { 
+              responseMimeType: "application/json",
+              temperature: 0.1
+            }
+          });
+          
+          const rawJSON = routingResponse.text.trim();
+          const parsed = JSON.parse(rawJSON);
+          if (parsed && ["tutor", "sales", "marketing", "support"].includes(parsed.agent)) {
+            targetAgent = parsed.agent as any;
+            confidence = parsed.confidence || 0.9;
+            rationale = parsed.rationale || "Automated vector-intent matches.";
+          }
+        } catch (e: any) {
+          console.warn("Orchestrator AI classification failed, falling back to local heuristic routing:", e.message);
+          // Fallback to local routing
+          const lower = prompt.toLowerCase();
+          if (lower.match(/lead|sale|deal|pipeline|prospect|score|contract|pitch|winner|revenue|LTV|money/)) {
+            targetAgent = "sales";
+            confidence = 0.88;
+            rationale = "Heuristic keyword detector identified sales/deal parameters.";
+          } else if (lower.match(/campaign|ad|marketing|email|newsletter|promote|segment|clicks|budget|funnel/)) {
+            targetAgent = "marketing";
+            confidence = 0.92;
+            rationale = "Heuristic keyword detector identified campaign/promotional parameters.";
+          } else if (lower.match(/ticket|complain|support|cx|issue|frequently|error|bug|resolved|incident|apology|help/)) {
+            targetAgent = "support";
+            confidence = 0.95;
+            rationale = "Heuristic keyword detector identified customer support/incident parameters.";
+          } else {
+            targetAgent = "tutor";
+            confidence = 0.82;
+            rationale = "Defaulted to CRM training tutor for general conceptual questions.";
+          }
+        }
+      } else {
+        // Direct local heuristic routing (offline mode)
+        const lower = prompt.toLowerCase();
+        if (lower.match(/lead|sale|deal|pipeline|prospect|score|contract|pitch|winner|revenue|LTV|money/)) {
+          targetAgent = "sales";
+          confidence = 0.88;
+          rationale = "Heuristic keyword matches (lead, sale, pipeline, deal) routed user to Sales Specialist.";
+        } else if (lower.match(/campaign|ad|marketing|email|newsletter|promote|segment|clicks|budget|funnel/)) {
+          targetAgent = "marketing";
+          confidence = 0.92;
+          rationale = "Heuristic keyword matches (campaign, ad, marketing, segment) routed user to Marketing Agent.";
+        } else if (lower.match(/ticket|complain|support|cx|issue|frequently|error|bug|resolved|incident|apology|help/)) {
+          targetAgent = "support";
+          confidence = 0.95;
+          rationale = "Heuristic keyword matches (ticket, complain, support, issue) routed user to Sentiment Support Agent.";
+        } else {
+          targetAgent = "tutor";
+          confidence = 0.82;
+          rationale = "Defaulted to CRM Tutor Agent based on learning & conceptual request signatures.";
+        }
+      }
+    } else {
+      // Direct selection mode
+      targetAgent = mode as any;
+      confidence = 1.0;
+      rationale = `Operator manually engaged the specialized [${mode.toUpperCase()} AGENT] view.`;
+    }
+
+    // 2. RUN INTEL WORKFLOW FOR THE SELECTED SPECIALIST AGENT
+    let systemInstruction = "";
+    if (targetAgent === "tutor") {
+      systemInstruction = `
+You are the CRM Co-Intelligence Tutor Agent. Your goal is to explain and teach the user how to use this advanced CRM!
+Knowledge bounds:
+- Deal Risk Metrics: Predicts deals at risk (under 50% score) based on last interaction days (>14).
+- Firestore Admin: Simulates database mutations, bulk importing CSV spreadsheets, and auditing security rules.
+- Marketing Funnel: Automates budget targets (target is roughly budget * 2.5) with simulation of $5k gain increments.
+- Transcriber: Multilingual real-time translation with sentiment analytics.
+- Pricing Tiers: Trial mode expires in 7 days. Paid plans (Monthly and Yearly) unlock premium models.
+
+Be encouraging, detail-oriented, and write beautiful Markdown responses with clean headings, code snippets, and direct lists.
+Active CRM State Statistics for your reference: ${JSON.stringify(dbContext.stats)}
+`;
+    } else if (targetAgent === "sales") {
+      systemInstruction = `
+You are the CRM AI Sales Specialist. You analyze deal pipelines, recommend lead qualification scores, and formulate upsell pitches.
+Review our live customer list below to formulate hyper-personalized recommendations or pitch outlines. Never invent customers not in the database!
+Use actual customer names and stages in your response.
+
+Active Customer Profiles Database:
+${JSON.stringify(dbContext.customersSnippet)}
+
+Rules:
+- High Risk deals are those with lastInteractionDays > 14 or winProbability < 50.
+- Scoring is between 0 and 100.
+Always format your output in a professional dashboard style with tabular breakdowns or key deal bullet points!
+`;
+    } else if (targetAgent === "marketing") {
+      systemInstruction = `
+You are the CRM AI Marketing Specialist. You compose engaging ad copies, plan email re-engagement cadences, and establish budgets.
+Review our active marketing campaigns to suggest concrete steps, review budgets, or draft high-converting templates.
+
+Active Campaigns Database:
+${JSON.stringify(dbContext.campaignsSnippet)}
+
+Rules:
+- Ensure the user's revenueTargetGoal is approximately 2.5x of campaign budget.
+Provide creative, copywriter-grade examples of ad/email/SMS copies with placeholders, custom tones (Professional, Empathetic, Urgency-Driven), and actionable segmentation advice.
+`;
+    } else if (targetAgent === "support") {
+      systemInstruction = `
+You are the CRM CX Support Agent. You have exceptionally high EQ, understand compliance boundaries, and resolve customer complaints gracefully.
+Review the live ticket pipeline to draft helpful troubleshooting guides or customer support replies.
+
+Support Tickets Pipeline Database:
+${JSON.stringify(dbContext.ticketsSnippet)}
+
+Rules:
+- Address customers by name, apologize sincerely, offer a compensation or precise fix, and show system validation notes.
+`;
+    }
+
+    // Prepare response
+    let finalOutput = "";
+    if (hasApiKey) {
+      const ai = getGeminiClient();
+      const config: any = {
+        systemInstruction,
+        temperature: 0.25
+      };
+
+      if (useSearch) {
+        config.tools = [{ googleSearch: {} }];
+      }
+
+      const modelResponse = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config
+      });
+      finalOutput = modelResponse.text;
+    } else {
+      // Advanced, data-aligned offline response generator to preserve premium UX offline
+      if (targetAgent === "tutor") {
+        finalOutput = `### 🎓 CRM Tutor: Knowledge Base & Simulation Guide
+Welcome to your CRM Guide. I have analyzed our current system configuration:
+- **Total active customers**: ${dbContext.stats.totalCustomers} registered
+- **Revenue campaigns**: ${dbContext.stats.totalCampaigns} active/draft
+- **Troubleshooting tickets**: ${dbContext.stats.totalTickets} tickets open
+
+#### 💡 Interactive FAQ & Best Practices:
+1. **How do I simulate a Deal Risk Alert?**
+   Navigate to the **AI for Sales** tab. Clicking any customer profile will show their Deal Risk assessment. If **Last Interaction Days > 14**, the CRM Shield triggers an \`AT RISK: Low Contact Speed\` flag. Click "Recalculate Win Probability" to run server-side metrics.
+2. **How does the Marketing Revenue Target simulator work?**
+   Create a Campaign with a budget, and the system auto-calculates a **2.5x revenue goal**. Once active, click **"➕ Simulate $5k Gain"** to generate deal conversions. When progress reaches 100%, the campaign completes, triggering a \`Completed\` audit trail.
+3. **What does the Transcriber do?**
+   It allows you to record custom customer audio pitches, runs multilingual voice detection, flags key customer sentiment (Positive, Negative), and auto-creates registered customer profiles in the NoSQL Datastore.
+
+*Note: In local sandbox mode, you can toggle active plans using the header controls.*`;
+      } else if (targetAgent === "sales") {
+        const topCustomer = dbContext.customersSnippet[0] || { name: "Prospect Node", lifecycleStage: "Lead" as const, leadScore: 65, lifetimeValue: 0, winProbability: 50, assignedRep: "Danielle Gold", tier: "Premium" as const, dealRiskStatus: "Low Risk" };
+        const riskList = dbContext.customersSnippet.filter((c: any) => c.winProbability < 50);
+        finalOutput = `### 💼 CRM Sales Specialist: Pipeline Intelligence Output
+Scanning the sales portfolio (**${dbContext.stats.totalCustomers} customer accounts**):
+- **Identified Deals at Risk**: **${dbContext.stats.highRiskCount}** (Win Prob < 50%)
+
+#### 🎯 Prospect Highlight: ${topCustomer.name} (${topCustomer.lifecycleStage})
+- **Lead Score**: \`${topCustomer.leadScore}/100\`
+- **LTV Value**: \`$${topCustomer.lifetimeValue.toLocaleString()}\`
+- **Win Probability**: \`${topCustomer.winProbability}%\`
+- **Assigned Account Executive**: \`${topCustomer.assignedRep || "Danielle Gold"}\`
+
+#### 📈 Strategic Qualification Score & Follow-up Plan:
+1. **Deal Qualification Score**: **${topCustomer.leadScore > 75 ? "A-Grade" : "B-Grade"}**
+2. **Risk Mitigation Recommendation**:
+   ${riskList.length > 0 ? `We have ${riskList.length} accounts experiencing stall. For **${riskList[0].name}**, dispatch a custom Migration and Security compliance quote immediately to recover momentum.` : `All current pipelines are running within safe margins (No stale communication thresholds breached).`}
+3. **Upsell Script Structure**:
+   *"Hello ${topCustomer.name}, as your database capacity grows, upgrading to our full Enterprise Multi-region node unlocks dedicated Firebase sync nodes. We can coordinate an onboarding briefing tomorrow at 10 AM PST."*`;
+      } else if (targetAgent === "marketing") {
+        const activeCamp = dbContext.campaignsSnippet.find((c: any) => c.status === "Active") || { title: "Golden Wave Re-activation", targetSegment: "Inactive 30 Days", budget: 8500 };
+        finalOutput = `### 📢 CRM Marketing Specialist: Ad & Re-engagement Campaign Outline
+Configuring brand marketing matrix (**${dbContext.stats.totalCampaigns} registered campaigns**):
+- **Revenue generated to date**: \`$${dbContext.campaignsSnippet.reduce((acc, c) => acc + c.revenueGenerated, 0).toLocaleString()}\`
+
+#### ⚡ Creative Ad Draft for Active Segment: \`${activeCamp.targetSegment}\`
+**Campaign Title**: ${activeCamp.title} (Targeted Re-engagement)
+- **Proposed Budget**: \`$${activeCamp.budget.toLocaleString()}\`
+- **Automated Revenue Target**: \`$${(activeCamp.budget * 2.5).toLocaleString()}\`
+
+#### 📝 Optimized Copies:
+1. **💼 Professional Email Subject**: *"Synchronize your core databases in real-time - Upgrade inside"*
+   - *Body*: "Hi {{Name}}, are manual updates stalling your sales team? With CRM Pro, your NoSQL databases sync immediately so you never miss transactional signups. Start your trial today..."
+2. **🚨 Urgency-Driven SMS copy**: *"⏰ Limited Offer: Lock in 30% savings on secure yearly plans with SOC2-certified clusters. Upgrade in 1 click at: [Domain]. Text STOP to opt-out."*
+3. **💬 Conversational Social Post**: *"Stop fighting database lag! 🛠️ CRM Pro's sandboxed rule-simulation enables your system managers to test security rules live before shipping. Read the handbook to learn how client-centric dev teams deploy with confidence!"*`;
+      } else if (targetAgent === "support") {
+        const openTickets = dbContext.ticketsSnippet.filter((t: any) => t.status !== "Resolved");
+        const activeTicket = openTickets[0] || { customerName: "Earthy Client", issue: "Database synchronization delay", priority: "High" };
+        finalOutput = `### 🤝 Customer Support CX Specialist: Incident & FAQ Resolution
+Analyzing helpdesk metrics (**${dbContext.stats.totalTickets} total tickets**, **${dbContext.stats.openTicketsCount} Unresolved**):
+
+#### 🚨 active Incident Resolution: "${activeTicket.issue}"
+- **Impacted Account**: \`${activeTicket.customerName}\`
+- **Priority Tier**: \`${activeTicket.priority}\`
+
+#### ✉️ Empathetic Customer Apology Copy:
+*"Hello ${activeTicket.customerName},*
+
+*Thank you for reaching out to CRM support. We apologize sincerely for the technical delay you encountered during the CSV database sync routine.*
+
+*Our systems team has audited the transaction nodes. We have adjusted socket buffer thresholds on client gateways, allowing your bulk entries to process at maximum rate immediately.*
+
+*Please test committing the CSV once more. If you run into any further validation alerts, our lead administrator Danielle Gold is available for a direct screenshare to verify compliance rule logs.*
+
+*Best Regards,*
+*Earthy CRM Support Suite"*`;
+      }
+    }
+
+    res.json({
+      agentUsed: targetAgent,
+      confidence: confidence,
+      rationale: rationale,
+      text: finalOutput
+    });
+
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Email Daily Digest endpoint triggering server-side summarizing routine for enterprise owners
+
 app.post("/api/email-daily-digest", async (req, res) => {
   try {
     const { ownerEmail } = req.body;

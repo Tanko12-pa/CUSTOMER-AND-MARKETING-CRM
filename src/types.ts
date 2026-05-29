@@ -87,6 +87,7 @@ export interface Campaign {
   clicks: number;
   conversations: number;
   revenueGenerated: number;
+  revenueTargetGoal?: number;
 }
 
 export interface SupportTicket {

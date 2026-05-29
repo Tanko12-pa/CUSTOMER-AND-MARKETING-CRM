@@ -29,13 +29,14 @@ import { DatabaseExplorer } from "./components/DatabaseExplorer";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { SystemAuditLogs } from "./components/SystemAuditLogs";
 import { MutationsAuditFeed } from "./components/MutationsAuditFeed";
+import { AgentHub } from "./components/AgentHub";
 import { Customer, Campaign, SupportTicket, AuditLog } from "./types";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"sales" | "marketing" | "support" | "audio" | "database" | "audit">("sales");
+  const [activeTab, setActiveTab] = useState<"agents" | "sales" | "marketing" | "support" | "audio" | "database" | "audit">("agents");
   
   // Dynamic CRM Core states loaded from Backend
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -539,8 +540,16 @@ export default function App() {
             <h3 className="text-xs font-bold text-[#A1A1AA] uppercase tracking-widest mb-3 px-1.5 font-sans">Applet Control Panel</h3>
             <div className="flex flex-col space-y-2">
               <button
+                onClick={() => setActiveTab("agents")}
+                className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "agents" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#C5A059] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
+              >
+                <MessageSquareCode className="w-4 h-4 shrink-0 text-[#C5A059]" />
+                <span>AI Co-Intelligence Hub</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab("sales")}
-                className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "sales" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#C5A059] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
+                className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "sales" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#0A0A0B] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
               >
                 <Briefcase className="w-4 h-4 shrink-0" />
                 <span>AI for Sales</span>
@@ -696,6 +705,15 @@ export default function App() {
                 transition={{ duration: 0.3, ease: "easeInOut" }}
                 className="w-full"
               >
+                {activeTab === "agents" && (
+                  <AgentHub 
+                    customers={customers} 
+                    campaigns={campaigns} 
+                    tickets={tickets} 
+                    onUpdateState={handleUpdateState} 
+                  />
+                )}
+
                 {activeTab === "sales" && (
                   <SalesModule 
                     customers={customers} 

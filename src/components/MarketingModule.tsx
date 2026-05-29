@@ -11,6 +11,7 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
   const [newTitle, setNewTitle] = useState("");
   const [newSegment, setNewSegment] = useState("Inactive 30 Days");
   const [newBudget, setNewBudget] = useState(5000);
+  const [newTargetGoal, setNewTargetGoal] = useState(12500);
   const [showAddForm, setShowAddForm] = useState(false);
 
   // Marketing Gen state
@@ -18,6 +19,7 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
   const [generatedResult, setGeneratedResult] = useState("");
   const [genLoading, setGenLoading] = useState(false);
   const [useSearch, setUseSearch] = useState(false);
+  const [campaignTone, setCampaignTone] = useState<"Professional" | "Empathetic" | "Urgency-Driven" | "Conversational">("Professional");
 
   // Custom multi-assets campaign copywriter states
   const [structuredCampaign, setStructuredCampaign] = useState<{
@@ -35,7 +37,8 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
     await onUpdateState("ADD_CAMPAIGN", {
       title: newTitle,
       targetSegment: newSegment,
-      budget: Number(newBudget)
+      budget: Number(newBudget),
+      revenueTargetGoal: Number(newTargetGoal) || Number(newBudget) * 2.5
     });
     setNewTitle("");
     setShowAddForm(false);
@@ -55,7 +58,8 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           theme: promptToUse,
-          segment: newSegment
+          segment: newSegment,
+          tone: campaignTone
         })
       });
       const data = await response.json();
@@ -126,17 +130,32 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
                     <option value="New Signups">New Signups</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[#A1A1AA] uppercase mb-1 font-sans">Budget ($ USD)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newBudget}
-                    onChange={(e) => setNewBudget(Number(e.target.value))}
-                    className="w-full bg-[#141416] border border-[#27272A] rounded-xl px-3 py-2 text-sm text-[#E4E4E7] focus:outline-[#C5A059] outline-none"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#A1A1AA] uppercase mb-1 font-sans">Budget ($ USD)</label>
+                    <input
+                      type="number"
+                      required
+                      value={newBudget}
+                      onChange={(e) => {
+                        setNewBudget(Number(e.target.value));
+                        setNewTargetGoal(Number(e.target.value) * 2.5);
+                      }}
+                      className="w-full bg-[#141416] border border-[#27272A] rounded-xl px-3 py-2 text-sm text-[#E4E4E7] focus:outline-[#C5A059] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#A1A1AA] uppercase mb-1 font-sans">Revenue Target ($ USD)</label>
+                    <input
+                      type="number"
+                      required
+                      value={newTargetGoal}
+                      onChange={(e) => setNewTargetGoal(Number(e.target.value))}
+                      className="w-full bg-[#141416] border border-[#27272A] rounded-xl px-3 py-2 text-sm text-[#E4E4E7] focus:outline-[#C5A059] outline-none"
+                    />
+                  </div>
                 </div>
-                <div className="flex items-end">
+                <div className="flex items-end pt-2">
                   <button
                     type="submit"
                     className="w-full bg-[#C5A059] hover:bg-[#C5A059]/90 text-[#0A0A0B] font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer"
@@ -162,10 +181,23 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
                       <p className="text-xs text-[#A1A1AA] font-mono mt-0.5">Segment: <span className="text-[#C5A059] font-bold font-sans">{camp.targetSegment}</span> | Budget: ${camp.budget.toLocaleString()}</p>
                     </div>
                     <div>
-                      {camp.status === "Active" ? (
-                        <span className="bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 font-mono text-[10px] font-bold px-2 py-0.5 rounded">
-                          ● ACTIVE ENROLLMENT
+                      {camp.status === "Completed" ? (
+                        <span className="bg-emerald-500 text-black border border-emerald-400 font-bold text-[10px] px-2.5 py-1 rounded inline-flex items-center space-x-1 uppercase animate-pulse">
+                          🏆 Target Met! Completed
                         </span>
+                      ) : camp.status === "Active" ? (
+                        <div className="flex flex-col items-end gap-1.5">
+                          <span className="bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 font-mono text-[10px] font-bold px-2 py-0.5 rounded">
+                            ● ACTIVE ENROLLMENT
+                          </span>
+                          <button
+                            onClick={() => onUpdateState("SIMULATE_REVENUE_GAIN", { campaign_id: camp.campaign_id })}
+                            className="bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold px-2 py-1 rounded border border-emerald-500/30 transition-all cursor-pointer flex items-center gap-1"
+                            type="button"
+                          >
+                            <span>➕ Simulate $5k Gain</span>
+                          </button>
+                        </div>
                       ) : (
                         <button
                           onClick={() => handleLaunchCampaign(camp.campaign_id)}
@@ -178,7 +210,7 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
                     </div>
                   </div>
 
-                  {camp.status === "Active" ? (
+                  {(camp.status === "Active" || camp.status === "Completed") ? (
                     <div className="space-y-3 pt-2">
                       <div className="grid grid-cols-3 gap-3 text-center bg-[#0A0A0B] p-2.5 border border-[#27272A] rounded-xl">
                         <div>
@@ -197,18 +229,27 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
                         </div>
                       </div>
 
-                      {/* Visual Funnel simulation representation */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] font-bold text-[#A1A1AA]">
-                          <span>Campaign Conversion Funnel Density</span>
-                          <span>Max potential calculated</span>
-                        </div>
-                        <div className="w-full bg-[#141416]/80 rounded-full h-3 overflow-hidden flex border border-[#27272A]">
-                          <div className="bg-[#27272A] h-full" style={{ width: "65%" }} title="Clicks width ratio"></div>
-                          <div className="bg-[#C5A059] h-full" style={{ width: "25%" }} title="Conversions step tracking"></div>
-                          <div className="bg-emerald-500 h-full" style={{ width: "10%" }} title="Direct Closed Lead ratio"></div>
-                        </div>
-                      </div>
+                      {/* Revenue Target Goal Progress */}
+                      {(() => {
+                        const goal = camp.revenueTargetGoal || (camp.budget * 2.5);
+                        const progressPct = Math.min((camp.revenueGenerated / goal) * 100, 100);
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold">
+                              <span className="text-[#A1A1AA]">Revenue Progress: <span className="text-[#E4E4E7]">${camp.revenueGenerated.toLocaleString()}</span> / <span className="text-[#C5A059]">${goal.toLocaleString()}</span></span>
+                              <span className={camp.status === "Completed" ? "text-emerald-400 font-extrabold flex items-center gap-1 animate-pulse" : "text-[#A1A1AA]"}>
+                                {progressPct.toFixed(0)}% {camp.status === "Completed" ? "🎯 TARGET MET" : ""}
+                              </span>
+                            </div>
+                            <div className="w-full bg-[#141416]/80 rounded-full h-2 overflow-hidden border border-[#27272A] relative">
+                              <div
+                                className={`h-full transition-all duration-500 ${camp.status === "Completed" ? "bg-emerald-500" : "bg-[#C5A059]"}`}
+                                style={{ width: `${progressPct}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div className="bg-[#0A0A0B]/30 text-[#A1A1AA] flex items-center justify-center p-3 rounded-xl border border-dashed border-[#27272A] text-xs text-center font-mono">
@@ -269,6 +310,22 @@ export function MarketingModule({ campaigns, onUpdateState }: MarketingModulePro
                 onChange={(e) => setMarketingPrompt(e.target.value)}
                 className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-xl p-3.5 text-xs text-[#E4E4E7] outline-none focus:border-[#C5A059] resize-none"
               />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono tracking-wider uppercase text-[#A1A1AA] mb-1.5">
+                Campaign Tone
+              </label>
+              <select
+                value={campaignTone}
+                onChange={(e) => setCampaignTone(e.target.value as any)}
+                className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-xl p-2.5 text-xs text-[#E4E4E7] outline-none focus:border-[#C5A059] cursor-pointer"
+              >
+                <option value="Professional">💼 Professional</option>
+                <option value="Empathetic">🤝 Empathetic</option>
+                <option value="Urgency-Driven">🚨 Urgency-Driven</option>
+                <option value="Conversational">💬 Conversational</option>
+              </select>
             </div>
 
             <div className="flex items-center space-x-2 pt-1">

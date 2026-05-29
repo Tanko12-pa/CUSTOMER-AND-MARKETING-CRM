@@ -78,6 +78,21 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ticket_id", "customer_id", "issue", "priority", "status"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "System mutations and CRM operation logs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action": { "type": "string" },
+        "collection": { "type": "string" },
+        "user": { "type": "string" },
+        "status": { "type": "string", "enum": ["Success", "Failed"] },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action", "collection", "user", "status", "details"]
     }
   },
   "firestore": {
@@ -96,6 +111,10 @@
     "/support_tickets/{ticketId}": {
       "schema": "SupportTicket",
       "description": "Client support tickets collection."
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System audit logging collection."
     }
   }
 }

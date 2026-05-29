@@ -49,6 +49,9 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
   const [validatedRecords, setValidatedRecords] = useState<any[]>([]);
   const [importFileName, setImportFileName] = useState("");
   const [isImportingInProgress, setIsImportingInProgress] = useState(false);
+  const [importProgressPercent, setImportProgressPercent] = useState(0);
+  const [importProgressIndex, setImportProgressIndex] = useState(0);
+  const [currentImportName, setCurrentImportName] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   // File drag-and-drop handlers
@@ -199,8 +202,24 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
   const handleCommitImport = async () => {
     if (validatedRecords.length === 0) return;
     setIsImportingInProgress(true);
+    setImportProgressPercent(0);
+    setImportProgressIndex(0);
+    setCurrentImportName("");
     try {
-      await onUpdateState("BULK_ADD_CUSTOMERS", { records: validatedRecords });
+      for (let i = 0; i < validatedRecords.length; i++) {
+        const record = validatedRecords[i];
+        setCurrentImportName(record.name);
+        setImportProgressIndex(i + 1);
+        const percent = Math.round(((i + 1) / validatedRecords.length) * 100);
+        setImportProgressPercent(percent);
+
+        // Commit single record to CRM datastore
+        await onUpdateState("ADD_CUSTOMER", record);
+
+        // Gentle aesthetic delay to allow the user to visualize each processing profile
+        await new Promise(resolve => setTimeout(resolve, i === validatedRecords.length - 1 ? 50 : 220));
+      }
+
       setImportFileName("");
       setValidatedRecords([]);
       setImportErrors([]);
@@ -209,6 +228,7 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
       setImportErrors([`Import operation failed: ${err.message || err}`]);
     } finally {
       setIsImportingInProgress(false);
+      setCurrentImportName(null);
     }
   };
 
@@ -1020,22 +1040,61 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
                 )}
 
                 {validatedRecords.length > 0 && importErrors.length === 0 && (
-                  <div className="bg-emerald-950/25 border border-emerald-900/40 rounded-xl p-3 text-center space-y-2.5">
-                    <span className="text-xs text-emerald-400 font-bold block">
-                      ✓ local validation cleared successfully!
-                    </span>
-                    <span className="text-[11px] text-zinc-300 block font-mono">
-                      Prepared <strong className="text-white font-sans">{validatedRecords.length}</strong> user profiles for database entry.
-                    </span>
+                  <div className="bg-emerald-950/25 border border-emerald-900/40 rounded-xl p-3 text-center space-y-3">
+                    {!isImportingInProgress ? (
+                      <>
+                        <span className="text-xs text-emerald-400 font-bold block">
+                          ✓ local validation cleared successfully!
+                        </span>
+                        <span className="text-[11px] text-zinc-300 block font-mono">
+                          Prepared <strong className="text-white font-sans">{validatedRecords.length}</strong> user profiles for database entry.
+                        </span>
 
-                    <button
-                      type="button"
-                      onClick={handleCommitImport}
-                      disabled={isImportingInProgress}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl transition-all shadow cursor-pointer disabled:opacity-50"
-                    >
-                      {isImportingInProgress ? "Writing to Firestore..." : `Commit Import to Firestore`}
-                    </button>
+                        <button
+                          type="button"
+                          onClick={handleCommitImport}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl transition-all shadow cursor-pointer"
+                        >
+                          Commit Import to Firestore
+                        </button>
+                      </>
+                    ) : (
+                      <div className="space-y-3 text-left animate-fade-in">
+                        <div className="flex justify-between items-center text-[10px] font-mono font-bold text-[#A1A1AA]">
+                          <span>BULK CSV PROCESSOR ACTIVE</span>
+                          <span className="text-emerald-400 animate-pulse font-mono font-bold">
+                            {importProgressPercent}%
+                          </span>
+                        </div>
+
+                        {/* Visual Progress Bar Wrapper */}
+                        <div className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-full h-3 overflow-hidden p-0.5">
+                          <div
+                            className="bg-emerald-500 h-full rounded-full transition-all duration-300 ease-out shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+                            style={{ width: `${importProgressPercent}%` }}
+                          ></div>
+                        </div>
+
+                        {/* Real-time Per-record Status Details */}
+                        <div className="bg-[#0A0A0B] border border-[#27272A] rounded-xl p-2.5 font-mono text-[10px] text-zinc-400 flex flex-col space-y-1.5 shadow-inner">
+                          <div className="flex justify-between text-zinc-500 text-[9px] border-b border-[#27272A] pb-1 flex-wrap gap-1">
+                            <span>SYNCING PROFILE INDEX</span>
+                            <span className="text-[#C5A059] font-sans font-bold">
+                              {importProgressIndex} / {validatedRecords.length}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping shrink-0"></span>
+                            <span className="text-zinc-300 truncate">
+                              Syncing state: <strong className="text-white font-sans text-xs">{currentImportName || "Initializing..."}</strong>
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-emerald-400/80 font-bold">
+                            ✓ FireStore write operations initialized...
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
