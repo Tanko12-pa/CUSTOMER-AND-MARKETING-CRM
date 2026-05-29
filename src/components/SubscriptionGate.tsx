@@ -29,6 +29,12 @@ export function SubscriptionGate({
   const [errorText, setErrorText] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
 
+  // Helper function to handle view toggles and clear old error banners
+  const switchMode = (targetMode: "register" | "login") => {
+    setErrorText(""); // CRITICAL: Erases the error banner instantly on switch
+    setMode(targetMode);
+  };
+
   // Credit Card inputs for simulated Stripe screen
   const [cardNumber, setCardNumber] = useState("4242 •••• •••• 4242");
   const [cardExpiry, setCardExpiry] = useState("12/29");
@@ -63,7 +69,15 @@ export function SubscriptionGate({
         await signInAndCheckTrial(email, password);
       }
     } catch (err: any) {
-      setErrorText(err.message || "An authentication anomaly occurred.");
+      if (err.message?.includes("auth/email-already-in-use") || err.code === "auth/email-already-in-use") {
+        setErrorText(
+          "An account with this email already exists. Please click 'Sign In' below to access your trial."
+        );
+      } else if (err.message?.includes("auth/invalid-credential") || err.code === "auth/invalid-credential") {
+        setErrorText("Incorrect email or password. Please try again or reset your password.");
+      } else {
+        setErrorText(err.message || "An authentication anomaly occurred.");
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -155,7 +169,10 @@ export function SubscriptionGate({
                   required
                   placeholder="Akindewum"
                   value={cardName}
-                  onChange={(e) => setCardName(e.target.value)}
+                  onChange={(e) => {
+                    setCardName(e.target.value);
+                    if (errorText) setErrorText("");
+                  }}
                   className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl pl-9 pr-3 py-2 text-xs text-[#E4E4E7] outline-none"
                 />
               </div>
@@ -169,7 +186,10 @@ export function SubscriptionGate({
                   type="text"
                   required
                   value={cardNumber}
-                  onChange={(e) => setCardNumber(e.target.value)}
+                  onChange={(e) => {
+                    setCardNumber(e.target.value);
+                    if (errorText) setErrorText("");
+                  }}
                   className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl pl-9 pr-3 py-2 text-xs text-[#E4E4E7] outline-none font-mono"
                 />
               </div>
@@ -180,7 +200,10 @@ export function SubscriptionGate({
                     required
                     maxLength={5}
                     value={cardExpiry}
-                    onChange={(e) => setCardExpiry(e.target.value)}
+                    onChange={(e) => {
+                      setCardExpiry(e.target.value);
+                      if (errorText) setErrorText("");
+                    }}
                     placeholder="MM/YY"
                     className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl px-3 py-2 text-xs text-[#E4E4E7] outline-none text-center font-mono"
                   />
@@ -191,7 +214,10 @@ export function SubscriptionGate({
                     required
                     maxLength={3}
                     value={cardCvc}
-                    onChange={(e) => setCardCvc(e.target.value)}
+                    onChange={(e) => {
+                      setCardCvc(e.target.value);
+                      if (errorText) setErrorText("");
+                    }}
                     placeholder="CVC"
                     className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl px-3 py-2 text-xs text-[#E4E4E7] outline-none text-center font-mono"
                   />
@@ -400,7 +426,10 @@ export function SubscriptionGate({
                     required
                     placeholder="Marcus Aurelius"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (errorText) setErrorText("");
+                    }}
                     className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl pl-9 pr-3 py-2 text-xs text-[#E4E4E7] outline-none transition-colors"
                   />
                 </div>
@@ -416,7 +445,10 @@ export function SubscriptionGate({
                   required
                   placeholder="your.email@company.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (errorText) setErrorText("");
+                  }}
                   className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl pl-9 pr-3 py-2 text-xs text-[#E4E4E7] outline-none transition-colors"
                 />
               </div>
@@ -431,20 +463,34 @@ export function SubscriptionGate({
                   required
                   placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errorText) setErrorText("");
+                  }}
                   className="w-full bg-[#0A0A0B] border border-[#27272A] focus:border-[#C5A059] rounded-xl pl-9 pr-3 py-2 text-xs text-[#E4E4E7] outline-none transition-colors"
                 />
               </div>
               {mode === "login" && (
                 <div className="text-right mt-1.5">
-                  <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    disabled={isAuthLoading}
-                    className="text-[#C5A059] hover:underline text-[10px] font-mono cursor-pointer"
+                  <span 
+                    className="forgot-password-link text-[#C5A059] hover:underline text-[10px] font-mono" 
+                    onClick={async () => {
+                      if (!email) {
+                        setErrorText("Please type your email address into the input field above first, then click Forgot Password.");
+                        return;
+                      }
+                      try {
+                        setErrorText('');
+                        await resetUserPassword(email);
+                        alert(`A secure password reset link has been dispatched to ${email}`);
+                      } catch (err: any) {
+                        setErrorText(err.message || "An authentication anomaly occurred.");
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
                   >
                     Forgot Password?
-                  </button>
+                  </span>
                 </div>
               )}
             </div>
@@ -477,10 +523,7 @@ export function SubscriptionGate({
                 Already registered a free trial?{" "}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode("login");
-                    setErrorText("");
-                  }}
+                  onClick={() => switchMode("login")}
                   className="text-[#C5A059] hover:underline font-bold cursor-pointer"
                 >
                   Sign In (Access Trial / Account)
@@ -491,10 +534,7 @@ export function SubscriptionGate({
                 First time visitor evaluating CRM?{" "}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode("register");
-                    setErrorText("");
-                  }}
+                  onClick={() => switchMode("register")}
                   className="text-[#C5A059] hover:underline font-bold cursor-pointer"
                 >
                   Register Free Trial

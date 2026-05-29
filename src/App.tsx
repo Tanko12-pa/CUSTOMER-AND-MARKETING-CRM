@@ -93,7 +93,24 @@ export default function App() {
 
   // Sync state data from Express Server API
   const syncStateData = async () => {
+    setLoading(true);
     try {
+      if (currentUser && (currentUser.uid || currentUser.email)) {
+        try {
+          const syncResponse = await fetch('/api/sync-backend-crm-state', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ userId: currentUser.uid || currentUser.email })
+          });
+          const syncData = await syncResponse.json();
+          console.log("Backend state synced:", syncData);
+        } catch (err) {
+          console.error("Failed to sync backend CRM state:", err);
+        }
+      }
+
       const response = await fetch("/api/state");
       const data = await response.json();
       setCustomers(data.customers || []);

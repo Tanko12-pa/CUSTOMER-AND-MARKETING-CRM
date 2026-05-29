@@ -758,6 +758,27 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
   }
 });
 
+// Sync backend CRM state with Google Cloud Firestore database
+app.post("/api/sync-backend-crm-state", async (req, res) => {
+  const { userId } = req.body;
+  try {
+    console.log(`Synchronization triggered on backend CRM state by user session: ${userId || "unknown"}`);
+    await syncFirestoreData();
+    addAudit("SYNC_BACKEND_STATE", "users", `Synchronized CRM state with Cloud Firestore for session: ${userId || "unknown"}`);
+    res.json({
+      success: true,
+      message: "Backend state synced successfully",
+      customersCount: mockCustomers.length,
+      campaignsCount: mockCampaigns.length,
+      ticketsCount: mockSupportTickets.length,
+      auditLogsCount: mockAuditLogs.length
+    });
+  } catch (error: any) {
+    console.error("Failed to sync backend CRM state on endpoint:", error);
+    res.status(500).json({ success: false, error: error.message || "An error occurred during synchronization." });
+  }
+});
+
 // REST Api to retrieve current state
 app.get("/api/state", async (req, res) => {
   if (db) {
