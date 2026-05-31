@@ -20,7 +20,8 @@ import {
   Download,
   CheckCircle,
   AlertTriangle,
-  Info
+  Info,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { KPICards } from "./components/KPICards";
@@ -282,6 +283,55 @@ export default function App() {
       setCheckoutSimulated(null);
     } catch (e) {
       console.error("Logout err:", e);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleClearCacheAndCookies = async () => {
+    setAuthLoading(true);
+    try {
+      // 1. Firebase Auth Sign-out
+      await auth.signOut();
+
+      // 2. Clear backend user session
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } catch (err) {
+        console.warn("Backend state reset endpoint issue:", err);
+      }
+
+      // 3. Clear window's localStorage & sessionStorage
+      try {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+      } catch (err) {
+        console.warn("Storage api reset rejected:", err);
+      }
+
+      // 4. Clear client-side browser cookies recursively
+      try {
+        const cookies = document.cookie.split(";");
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i];
+          const eqPos = cookie.indexOf("=");
+          const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+          document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+          document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=" + window.location.hostname;
+        }
+      } catch (err) {
+        console.warn("Cookies purge rejected:", err);
+      }
+
+      showToast("App cookies, cache, and sandbox store successfully purged!", "success");
+      
+      // Delay slightly for toast visibility and then hard reload the path
+      setTimeout(() => {
+        window.location.href = window.location.origin + window.location.pathname;
+      }, 1000);
+    } catch (e) {
+      console.error("Purge action failed:", e);
+      showToast("Failed to clean client-side state files.", "error");
     } finally {
       setAuthLoading(false);
     }
@@ -568,13 +618,13 @@ export default function App() {
       <div className="min-h-screen bg-[#070708] text-[#E4E4E7] flex flex-col items-center justify-center space-y-4 font-sans" id="subscription-preloading-loader">
         <Loader2 className="w-10 h-10 text-[#C5A059] animate-spin" />
         <p className="text-[#A1A1AA] font-mono text-xs uppercase tracking-widest animate-pulse font-bold">
-          Validating CRM Subscription Token...
+          Checking CRM Credentials...
         </p>
       </div>
     );
   }
 
-  if (!currentUser || !currentUser.active || checkoutSimulated) {
+  if (!currentUser) {
     return (
       <SubscriptionGate
         onRegisterTrial={handleRegisterTrial}
@@ -591,49 +641,30 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#E4E4E7] flex flex-col font-sans" id="crm-app-root">
       
-      {/* SUBSCRIPTION STATUS CONTROLLER BANNER */}
-      <div className="bg-[#121214] border-b border-[#C5A059]/30 text-xs px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 font-sans relative z-10" id="crm-sandbox-header">
+      {/* CRM STATUS HEADER CONTROLLER BANNER */}
+      <div className="bg-[#121214] border-b border-[#27272A] text-xs px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 font-sans relative z-10" id="crm-sandbox-header">
         <div className="flex items-center space-x-2">
           <span className="shrink-0 p-1 bg-[#C5A059]/10 text-[#C5A059] rounded-lg">
             <Sparkles className="w-3.5 h-3.5" />
           </span>
           <span className="text-[#E4E4E7] font-medium font-sans">
-            Active Account: <strong className="text-white font-mono">{currentUser.email}</strong>
+            Active Operator: <strong className="text-white font-mono">{currentUser.email}</strong>
           </span>
           <span className="text-[#71717A] font-mono font-medium">|</span>
-          {currentUser.plan === "trial" ? (
-            <span className="inline-flex items-center gap-1.5 text-amber-400 bg-amber-950/20 border border-[#D97706]/35 px-2 py-0.5 rounded-full font-bold font-mono text-[10px] uppercase">
-              ⏳ Trial Mode: {currentUser.trialDaysLeft ? currentUser.trialDaysLeft.toFixed(1) : "7.0"} Days Left
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 px-2 py-0.5 rounded-full font-bold font-mono text-[10px] uppercase">
-              ⭐ Paid Plan: CRM Pro {currentUser.plan} Active
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 px-2 py-0.5 rounded-full font-bold font-mono text-[10px] uppercase">
+            ⭐ Standard Plan: Unlimited Workspace Enabled
+          </span>
         </div>
 
         {/* Sandbox Dev Console Simulator controls */}
         <div className="flex items-center space-x-2.5">
-          <span className="text-[10px] text-[#71717A] tracking-wider font-mono font-bold uppercase shrink-0">
-            Sandbox Simulator:
-          </span>
-          {currentUser.plan === "trial" && (
-            <button
-              onClick={handleSimulateExpiration}
-              className="bg-red-950/30 hover:bg-red-950/60 text-red-400 font-bold px-2.5 py-1 rounded border border-red-900/45 cursor-pointer text-[10px] font-mono transition-colors"
-              title="Fast-forward clocks by 7.5 days to trigger automatic trial expiration"
-            >
-              ⚡ Simulate Expiration
-            </button>
-          )}
-          {(!currentUser.active || currentUser.trialDaysLeft <= 0 || currentUser.plan !== "trial") && (
-            <button
-              onClick={handleSimulateRestoreTrial}
-              className="bg-emerald-950/30 hover:bg-emerald-950/60 text-emerald-400 font-bold px-2.5 py-1 rounded border border-emerald-900/45 cursor-pointer text-[10px] font-mono transition-colors"
-            >
-              🔄 Reset to Free Trial
-            </button>
-          )}
+          <button
+            onClick={handleClearCacheAndCookies}
+            className="bg-amber-950/20 hover:bg-amber-950/40 text-amber-500 hover:text-amber-400 border border-amber-900/40 px-2.5 py-1 rounded cursor-pointer text-[10px] font-mono transition-colors flex items-center gap-1"
+            title="Clean all caches, local storage, session storage and cookies from this app"
+          >
+            <Trash2 className="w-3 h-3" /> Clear Cache & Cookies
+          </button>
           <button
             onClick={handleLogout}
             className="bg-[#141416] hover:bg-white/5 text-[#A1A1AA] hover:text-white px-2.5 py-1 rounded border border-[#27272A] cursor-pointer text-[10px] font-mono transition-colors flex items-center gap-1"

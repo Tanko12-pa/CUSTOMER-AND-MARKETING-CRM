@@ -656,15 +656,13 @@ export function SubscriptionGate({
           <div style={S.bullet}>
             <span style={S.bulletIcon}>🛡</span>
             <span>
-              <strong>Subscription Protected Suite</strong>: All users can access and
-              evaluate the platform through our official trial &amp; sub channels.
+              <strong>Secure Operator Log</strong>: Access the unified customer management console, support ticket desk, and audit logs.
             </span>
           </div>
           <div style={S.bullet}>
             <span style={S.bulletIcon}>⚡</span>
             <span>
-              <strong>100% Free Trial</strong>: Enjoy 7 full days of enterprise pipeline
-              diagnostics before selecting an upgrade module.
+              <strong>AI Growth Engines</strong>: Compose targeted re-engagement campaigns and qualify potential marketing targets instantly.
             </span>
           </div>
           <hr style={{ ...S.rule, marginTop: "1rem" }} />
@@ -715,7 +713,7 @@ export function SubscriptionGate({
             </div>
 
             <button type="submit" style={S.btnGold} disabled={isAuthLoading}>
-              {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>Start 7-Day Free Trial →</span>}
+              {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>Create Your Account →</span>}
             </button>
 
             <div style={S.footerRow}>
@@ -739,15 +737,13 @@ export function SubscriptionGate({
         <div style={S.bullet}>
           <span style={S.bulletIcon}>🛡</span>
           <span>
-            <strong>Subscription Protected Suite</strong>: All users can access and
-            evaluate the platform through our official trial &amp; sub channels.
+            <strong>Secure Operator Log</strong>: Access the unified customer management console, support ticket desk, and audit logs.
           </span>
         </div>
         <div style={S.bullet}>
           <span style={S.bulletIcon}>⚡</span>
           <span>
-            <strong>100% Free Trial</strong>: Enjoy 7 full days of enterprise pipeline
-            diagnostics before selecting an upgrade module.
+            <strong>AI Growth Engines</strong>: Compose targeted re-engagement campaigns and qualify potential marketing targets instantly.
           </span>
         </div>
         <hr style={{ ...S.rule, marginTop: "1rem" }} />
@@ -786,12 +782,12 @@ export function SubscriptionGate({
           </div>
 
           <button type="submit" style={S.btnDark} disabled={isAuthLoading}>
-            {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>Sign In &amp; Continue Trial →</span>}
+            {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>Sign In &amp; Access CRM →</span>}
           </button>
 
           <div style={S.footerRow}>
             First time visitor evaluating CRM?{" "}
-            <span style={S.link} onClick={() => handleFormToggle("signUp")}>Register Free Trial</span>
+            <span style={S.link} onClick={() => handleFormToggle("signUp")}>Register Account</span>
           </div>
         </form>
       </div>

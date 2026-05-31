@@ -455,9 +455,9 @@ function addAudit(action: string, collection: string, details: string, user: str
 interface CRMUser {
   email: string;
   name: string;
-  trialStartDate: string; // ISO date string
-  plan: "trial" | "monthly" | "yearly" | "none";
-  subscriptionActive: boolean;
+  trialStartDate?: string; // ISO date string
+  plan?: string;
+  subscriptionActive?: boolean;
   subscriptionStartDate?: string;
 }
 
@@ -475,27 +475,9 @@ let mockUsersList: CRMUser[] = [
 // Active user session
 let currentUserSession: CRMUser | null = null;
 
-// User verification helper for 7-day free trial limit
+// User verification helper for unlimited un-gated CRM access
 function checkUserAccess(user: CRMUser): { active: boolean; reason: string; trialDaysLeft: number } {
-  if (user.plan === "monthly" || user.plan === "yearly") {
-    return { active: user.subscriptionActive, reason: "Active paid user subscription", trialDaysLeft: 0 };
-  }
-  
-  if (user.plan === "trial") {
-    const trialStart = new Date(user.trialStartDate).getTime();
-    const now = Date.now();
-    const elapsedMs = now - trialStart;
-    const elapsedDays = elapsedMs / (1000 * 3600 * 24);
-    const timeLeft = Math.max(0, 7 - elapsedDays);
-    
-    if (elapsedDays >= 7) {
-      return { active: false, reason: "7-Day Free Trial period has expired", trialDaysLeft: 0 };
-    }
-    
-    return { active: true, reason: `Trial period has ${timeLeft.toFixed(1)} days left`, trialDaysLeft: timeLeft };
-  }
-  
-  return { active: false, reason: "No active plan found", trialDaysLeft: 0 };
+  return { active: true, reason: "Unlimited Standard Access", trialDaysLeft: 0 };
 }
 
 // API endpoint to retrieve current session details
@@ -508,14 +490,14 @@ app.get("/api/auth/session", (req, res) => {
     loggedIn: true,
     user: {
       ...currentUserSession,
-      active: diagnostic.active,
-      reason: diagnostic.reason,
-      trialDaysLeft: diagnostic.trialDaysLeft
+      active: true,
+      reason: "Unlimited Standard Access",
+      trialDaysLeft: 0
     }
   });
 });
 
-// Create/Register brand new user with 7-Day Free Trial (Completely disconnected from Stripe)
+// Create/Register brand new user with instant standard access
 app.post("/api/auth/register-trial", (req, res) => {
   try {
     const { name, email } = req.body;
@@ -535,7 +517,7 @@ app.post("/api/auth/register-trial", (req, res) => {
         name: name.trim(),
         email: cleanEmail,
         trialStartDate: new Date().toISOString(),
-        plan: "trial",
+        plan: "standard",
         subscriptionActive: true
       };
       mockUsersList.push(newUser);
@@ -547,16 +529,15 @@ app.post("/api/auth/register-trial", (req, res) => {
       }
     }
 
-    const diagnostic = checkUserAccess(currentUserSession);
-    addAudit("USER_REGISTERED_TRIAL", "users", `User registered & signed in with 100% free 7-day trial: ${email}`);
+    addAudit("USER_REGISTERED", "users", `User registered & signed in: ${email}`);
 
     res.json({
       success: true,
       user: {
         ...currentUserSession,
-        active: diagnostic.active,
-        reason: diagnostic.reason,
-        trialDaysLeft: diagnostic.trialDaysLeft
+        active: true,
+        reason: "Unlimited Standard Access",
+        trialDaysLeft: 0
       }
     });
   } catch (error: any) {
@@ -576,20 +557,19 @@ app.post("/api/auth/login", (req, res) => {
     const user = mockUsersList.find(u => u.email.toLowerCase() === cleanEmail);
 
     if (!user) {
-      return res.status(404).json({ success: false, error: "No user account registered under this email. Please click 'Start 7-Day Free Trial' first!" });
+      return res.status(404).json({ success: false, error: "No user account registered under this email. Please click 'Register' first!" });
     }
 
     currentUserSession = user;
-    const diagnostic = checkUserAccess(user);
     addAudit("USER_LOGGED_IN", "users", `User signed in: ${email}`);
 
     res.json({
       success: true,
       user: {
         ...user,
-        active: diagnostic.active,
-        reason: diagnostic.reason,
-        trialDaysLeft: diagnostic.trialDaysLeft
+        active: true,
+        reason: "Unlimited Standard Access",
+        trialDaysLeft: 0
       }
     });
   } catch (error: any) {
@@ -602,132 +582,46 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ success: true });
 });
 
-// Dynamic subscription activation (Stripe completion or direct bypass callback)
+// Dynamic subscription activation (Empty placeholders for compatibility if hit)
 app.post("/api/auth/confirm-subscription", (req, res) => {
-  try {
-    const { email, plan } = req.body;
-    if (!email || !plan) {
-      return res.status(400).json({ success: false, error: "Email and plan type required" });
+  const { email } = req.body;
+  const cleanEmail = email ? email.trim().toLowerCase() : "";
+  res.json({
+    success: true,
+    user: {
+      email: cleanEmail,
+      name: "CRM Operator",
+      active: true,
+      reason: "Unlimited Standard Access",
+      trialDaysLeft: 0
     }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === cleanEmail);
-
-    if (userIndex !== -1) {
-      mockUsersList[userIndex].plan = plan;
-      mockUsersList[userIndex].subscriptionActive = true;
-      mockUsersList[userIndex].subscriptionStartDate = new Date().toISOString();
-      
-      if (currentUserSession?.email.toLowerCase() === cleanEmail) {
-        currentUserSession = mockUsersList[userIndex];
-      }
-      if (db) {
-        setDoc(doc(db, "users", cleanEmail), mockUsersList[userIndex]).catch(err => {
-          console.error("Failed to write subscription update to Firestore:", err);
-        });
-      }
-      
-      const diagnostic = checkUserAccess(mockUsersList[userIndex]);
-      addAudit("SUBSCRIPTION_ACTIVATED", "users", `User successfully activated ${plan} tier: ${cleanEmail}`);
-
-      res.json({
-        success: true,
-        user: {
-          ...mockUsersList[userIndex],
-          active: diagnostic.active,
-          reason: diagnostic.reason,
-          trialDaysLeft: diagnostic.trialDaysLeft
-        }
-      });
-    } else {
-      res.status(404).json({ success: false, error: "User profile not found in current sandbox memory." });
-    }
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  });
 });
 
-// Endpoint to simulate the passage of time for trial expiration testing purposes
+// Endpoint to simulate expiration - deprecated and bypassed
 app.post("/api/auth/simulate-expiration", (req, res) => {
-  try {
-    const { email } = req.body;
-    const cleanEmail = email ? email.trim().toLowerCase() : (currentUserSession ? currentUserSession.email.toLowerCase() : "");
-    const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === cleanEmail);
-
-    if (userIndex !== -1) {
-      // Shift registered time 8 days back to make it expired
-      mockUsersList[userIndex].plan = "trial";
-      mockUsersList[userIndex].trialStartDate = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString();
-      mockUsersList[userIndex].subscriptionActive = false;
-      
-      if (currentUserSession?.email.toLowerCase() === cleanEmail) {
-        currentUserSession = mockUsersList[userIndex];
-      }
-      if (db) {
-        setDoc(doc(db, "users", cleanEmail), mockUsersList[userIndex]).catch(err => {
-          console.error("Failed to write simulated expiration to Firestore:", err);
-        });
-      }
-      
-      const diagnostic = checkUserAccess(mockUsersList[userIndex]);
-      addAudit("SIMULATED_TRIAL_EXPIRATION", "users", `DevConsole: Fast-forwarded timezone clocks to force trial expiration for ${cleanEmail}`);
-
-      res.json({
-        success: true,
-        user: {
-          ...mockUsersList[userIndex],
-          active: diagnostic.active,
-          reason: diagnostic.reason,
-          trialDaysLeft: diagnostic.trialDaysLeft
-        }
-      });
-    } else {
-      res.status(404).json({ success: false, error: "No active user matches search query." });
+  res.json({
+    success: true,
+    user: {
+      ...currentUserSession,
+      active: true,
+      reason: "Unlimited Standard Access",
+      trialDaysLeft: 0
     }
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  });
 });
 
-// Restore free trial date to now
+// Restore trial - deprecated and bypassed
 app.post("/api/auth/simulate-restore-trial", (req, res) => {
-  try {
-    const { email } = req.body;
-    const cleanEmail = email ? email.trim().toLowerCase() : (currentUserSession ? currentUserSession.email.toLowerCase() : "");
-    const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === cleanEmail);
-
-    if (userIndex !== -1) {
-      mockUsersList[userIndex].plan = "trial";
-      mockUsersList[userIndex].trialStartDate = new Date().toISOString();
-      mockUsersList[userIndex].subscriptionActive = true;
-      
-      if (currentUserSession?.email.toLowerCase() === cleanEmail) {
-        currentUserSession = mockUsersList[userIndex];
-      }
-      if (db) {
-        setDoc(doc(db, "users", cleanEmail), mockUsersList[userIndex]).catch(err => {
-          console.error("Failed to write simulated trial restore to Firestore:", err);
-        });
-      }
-
-      const diagnostic = checkUserAccess(mockUsersList[userIndex]);
-      addAudit("SIMULATED_TRIAL_RESTORE", "users", `DevConsole: Restored trial period clocks to now for ${cleanEmail}`);
-
-      res.json({
-        success: true,
-        user: {
-          ...mockUsersList[userIndex],
-          active: diagnostic.active,
-          reason: diagnostic.reason,
-          trialDaysLeft: diagnostic.trialDaysLeft
-        }
-      });
-    } else {
-      res.status(404).json({ success: false, error: "No active user matches search query." });
+  res.json({
+    success: true,
+    user: {
+      ...currentUserSession,
+      active: true,
+      reason: "Unlimited Standard Access",
+      trialDaysLeft: 0
     }
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  });
 });
 
 // Create standard Stripe checkout session OR redirect to mockup completion callbacks
@@ -2140,6 +2034,7 @@ app.post("/api/gmail/send", (req, res) => {
   res.json({ success: true, logs: mockAuditLogs });
 });
 
+/*
 // --- 1. STRIPE CHECKOUT SESSION CREATION ---
 app.post('/api/checkout/create-session', async (req, res) => {
   const { plan, userId } = req.body; // 'monthly' or 'yearly'
@@ -2237,6 +2132,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
   res.json({ received: true });
 });
+*/
 
 // Lookup function checking status of logged-in trial or subscribed users in mock CRM database
 async function checkUserSubscriptionStatus(userId: string): Promise<boolean> {
@@ -2375,34 +2271,20 @@ async function syncFirestoreData() {
   }
 }
 
-// --- 3. PROTECTED AI GENERATION ENDPOINT ---
+// --- 3. UNLOCKED CRM ENDPOINT (REPLACED AS REQUESTED) ---
 app.post('/api/generate-content', async (req, res) => {
-  const { prompt, userId } = req.body;
-
-  if (!userId) {
-    return res.status(400).json({ error: "Missing userId" });
-  }
-
-  // Database verification step
-  const isUserSubscribed = await checkUserSubscriptionStatus(userId); 
-
-  if (!isUserSubscribed) {
-    return res.status(403).json({ 
-      error: "Subscription required.", 
-      message: "Please upgrade your account to use AI features." 
-    });
-  }
+  const { prompt } = req.body;
 
   try {
     const ai = getGeminiClient();
-    // Generate content using the new Google Gen AI SDK syntax with recommended model
+    // Subscription block entirely bypassed; access is instantly granted
     const response = await ai.models.generateContent({
       model: 'gemini-3.5-flash',
       contents: prompt,
     });
 
     res.json({ result: response.text });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini API Error:", error);
     res.status(500).json({ error: "Failed to generate content." });
   }
