@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Customer, LifecycleStage } from "../types";
-import { PieChart, Zap, Percent } from "lucide-react";
+import { PieChart, Zap, Percent, Download } from "lucide-react";
 
 interface LifecyclePieChartProps {
   customers: Customer[];
@@ -45,6 +45,56 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
     SQL: "#F59E0B",       // Gold / Amber
     Customer: "#10B981",  // Emerald
     Churned: "#EF4444",   // Crimson / Red
+  };
+
+  // Browser utility to download D3 SVG state as high-res PNG file with a dark theme background styling
+  const handleDownloadPNG = () => {
+    const svgElement = svgRef.current;
+    if (!svgElement) return;
+
+    const width = 240;
+    const height = 240;
+
+    try {
+      // Serialize cloning the active SVG node
+      const clone = svgElement.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute("width", width.toString());
+      clone.setAttribute("height", height.toString());
+      clone.style.background = "#141416";
+      
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(clone);
+      const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const blobURL = window.URL.createObjectURL(blob);
+      
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        // Use double sizing for higher quality density
+        canvas.width = width * 2;
+        canvas.height = height * 2;
+        const ctx = canvas.getContext("2d");
+        
+        if (ctx) {
+          ctx.scale(2, 2);
+          ctx.fillStyle = "#141416";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(image, 0, 0, width, height);
+          
+          const pngURL = canvas.toDataURL("image/png");
+          const downloadLink = document.createElement("a");
+          downloadLink.href = pngURL;
+          downloadLink.download = `crm_lifecycle_distribution_${new Date().toISOString().split("T")[0]}.png`;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+        }
+        window.URL.revokeObjectURL(blobURL);
+      };
+      image.src = blobURL;
+    } catch (e) {
+      console.error("Failed to compile or generate chart image payload:", e);
+    }
   };
 
   // 1. Render Pie Chart
@@ -105,12 +155,13 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
         (this as any)._current = d;
       });
 
-    // Add entry transition
+    // Add rich entry transition utilizing d3.interpolate for a beautiful sweep-out layout animation
     path
       .transition()
-      .duration(850)
+      .duration(1100)
+      .ease(d3.easeExpOut)
       .attrTween("d", function (d) {
-        const interpolate = d3.interpolate({ startAngle: 0, endAngle: 0 }, d);
+        const interpolate = d3.interpolate({ startAngle: d.startAngle, endAngle: d.startAngle }, d);
         return function (t) {
           return arc(interpolate(t) as any) as string;
         };
@@ -356,14 +407,24 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
               <p className="text-[10px] text-[#A1A1AA] font-mono leading-none mt-0.5">Interactive D3 Pipeline Monitor</p>
             </div>
           </div>
-          {onSelectStage && selectedStage && (
-            <button 
-              onClick={() => onSelectStage(null)}
-              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300 font-mono transition-colors cursor-pointer"
+          <div className="flex items-center space-x-2">
+            {onSelectStage && selectedStage && (
+              <button 
+                onClick={() => onSelectStage(null)}
+                className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300 font-mono transition-all cursor-pointer mr-1"
+              >
+                Clear Filter [×]
+              </button>
+            )}
+            <button
+              onClick={handleDownloadPNG}
+              className="px-2.5 py-1 rounded-lg bg-[#C5A059]/10 hover:bg-[#C5A059]/15 border border-[#C5A059]/30 text-[10px] text-[#C5A059] font-mono transition-all flex items-center space-x-1 cursor-pointer"
+              title="Download Pie Chart as PNG Image"
             >
-              Clear Filter [×]
+              <Download className="w-3.5 h-3.5" />
+              <span>Download PNG</span>
             </button>
-          )}
+          </div>
         </div>
 
         <p className="text-xs text-[#A1A1AA] leading-relaxed">

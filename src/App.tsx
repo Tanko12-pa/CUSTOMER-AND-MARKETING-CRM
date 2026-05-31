@@ -25,6 +25,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { KPICards } from "./components/KPICards";
 import { LifecyclePieChart } from "./components/LifecyclePieChart";
+import { PipelineVelocityHistogram } from "./components/PipelineVelocityHistogram";
 import { SalesModule } from "./components/SalesModule";
 import { MarketingModule } from "./components/MarketingModule";
 import { SupportModule } from "./components/SupportModule";
@@ -750,6 +751,9 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* COMPLEMENTARY PIPELINE VELOCITY HISTOGRAMS */}
+        <PipelineVelocityHistogram customers={customers} />
       </div>
 
       {/* MAIN DIVISION: BUTTON PANEL NAV & ACTIVE SCREEN GRID */}
