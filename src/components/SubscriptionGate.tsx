@@ -222,6 +222,20 @@ export function SubscriptionGate({
     if (errorText) setErrorText("");
   };
 
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value.trim());
+    if (errorText) {
+      setErrorText("");
+    }
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (errorText) {
+      setErrorText("");
+    }
+  };
+
   const handleFormToggle = (targetMode: "signUp" | "signIn" | "forgotPassword") => {
     setErrorText('');     // Clear out banners
     setEmail('');         // Reset the fields so old parameters don't hang around
@@ -261,18 +275,29 @@ export function SubscriptionGate({
     e.preventDefault();
     setErrorText("");
 
-    if (!email.trim() || !password) {
-      return setErrorText("Please enter your email and password.");
+    // Trim whitespace to prevent accidental trailing space errors
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      setErrorText("Please fill in all fields.");
+      return;
     }
 
     setLocalLoading(true);
     try {
-      await signInAndCheckTrial(email, password);
+      await signInAndCheckTrial(cleanEmail, cleanPassword);
+      console.log("Logged in successfully!");
     } catch (err: any) {
-      if (err.message?.includes("invalid-credential") || err.code === "auth/invalid-credential" || err.message?.includes("wrong-password") || err.message?.includes("user-not-found")) {
+      if (
+        err.message?.includes("invalid-credential") || 
+        err.code === "auth/invalid-credential" || 
+        err.message?.includes("wrong-password") || 
+        err.message?.includes("user-not-found")
+      ) {
         setErrorText("Incorrect email or password. Please try again or reset your password.");
       } else {
-        setErrorText(err.message || "An authentication error occurred.");
+        setErrorText(err.message || "Incorrect email or password. Please try again or reset your password.");
       }
     } finally {
       setLocalLoading(false);
@@ -672,10 +697,7 @@ export function SubscriptionGate({
                 placeholder="you@company.com"
                 value={email}
                 style={S.inputEl}
-                onChange={(e) => {
-                  setEmail(e.target.value.trim());
-                  if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
-                }}
+                onChange={handleEmailChange}
               />
             </div>
 
@@ -688,10 +710,7 @@ export function SubscriptionGate({
                 placeholder="Min. 8 characters"
                 value={password}
                 style={S.inputEl}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
-                }}
+                onChange={handlePasswordChange}
               />
             </div>
 
@@ -745,10 +764,7 @@ export function SubscriptionGate({
               placeholder="you@company.com"
               value={email}
               style={S.inputEl}
-              onChange={(e) => {
-                setEmail(e.target.value.trim());
-                if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
-              }}
+              onChange={handleEmailChange}
             />
           </div>
 
@@ -761,10 +777,7 @@ export function SubscriptionGate({
               placeholder="Your password"
               value={password}
               style={S.inputEl}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
-              }}
+              onChange={handlePasswordChange}
             />
           </div>
 

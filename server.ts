@@ -110,6 +110,12 @@ let mockCustomers: any[] = [
     assignedRep: "Danielle Gold",
     dealRiskStatus: "Low Risk",
     createdAt: new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString(),
+      MQL: new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString(),
+      SQL: new Date(Date.now() - 32 * 24 * 3600 * 1000).toISOString(),
+      Customer: new Date(Date.now() - 25 * 24 * 3600 * 1000).toISOString()
+    },
     growthTrends: [
       { month: "Dec", ltv: 55000 },
       { month: "Jan", ltv: 70000 },
@@ -157,6 +163,11 @@ let mockCustomers: any[] = [
     assignedRep: "Danielle Gold",
     dealRiskStatus: "Medium Risk: Inactivity Warning",
     createdAt: new Date(Date.now() - 20 * 24 * 3600 * 1000).toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 20 * 24 * 3600 * 1000).toISOString(),
+      MQL: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString(),
+      SQL: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString()
+    },
     growthTrends: [
       { month: "Dec", ltv: 10000 },
       { month: "Jan", ltv: 18000 },
@@ -203,6 +214,9 @@ let mockCustomers: any[] = [
     assignedRep: "Marcus Aurelius",
     dealRiskStatus: "High Risk: Churn Inbound",
     createdAt: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString()
+    },
     growthTrends: [
       { month: "Dec", ltv: 0 },
       { month: "Jan", ltv: 0 },
@@ -249,6 +263,12 @@ let mockCustomers: any[] = [
     assignedRep: "Danielle Gold",
     dealRiskStatus: "At Risk: Negative CSAT",
     createdAt: new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString(),
+      MQL: new Date(Date.now() - 52 * 24 * 3600 * 1000).toISOString(),
+      SQL: new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString(),
+      Customer: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    },
     growthTrends: [
       { month: "Dec", ltv: 35000 },
       { month: "Jan", ltv: 48000 },
@@ -295,6 +315,10 @@ let mockCustomers: any[] = [
     assignedRep: "Marcus Aurelius",
     dealRiskStatus: "Low Risk",
     createdAt: new Date().toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+      MQL: new Date().toISOString()
+    },
     growthTrends: [
       { month: "Dec", ltv: 2000 },
       { month: "Jan", ltv: 4000 },
@@ -842,11 +866,13 @@ app.post("/api/update-state", async (req, res) => {
     const { type, payload } = req.body;
     
     if (type === "ADD_CUSTOMER") {
+      const stage = payload.lifecycleStage || "Lead";
+      const now = new Date().toISOString();
       const newCust = {
         uid: `cust_${Date.now()}`,
         name: payload.name || "Unnamed Client",
         email: payload.email || "unknown@company.com",
-        lifecycleStage: payload.lifecycleStage || "Lead",
+        lifecycleStage: stage,
         tier: payload.tier || "Free",
         leadScore: Number(payload.leadScore) || 50,
         lifetimeValue: Number(payload.lifetimeValue) || 0,
@@ -855,7 +881,10 @@ app.post("/api/update-state", async (req, res) => {
         winProbability: Number(payload.winProbability) || 50,
         assignedRep: payload.assignedRep || "Danielle Gold",
         dealRiskStatus: payload.lastInteractionDays > 14 ? "High Risk: Inactive" : "Low Risk",
-        createdAt: new Date().toISOString()
+        createdAt: now,
+        stageHistory: {
+          [stage]: now
+        }
       };
       
       // Enforce the rule: negative sentiment implies "At Risk"
@@ -873,11 +902,13 @@ app.post("/api/update-state", async (req, res) => {
       const importedList = [];
       for (const record of records) {
         const uniqueId = `cust_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        const stage = record.lifecycleStage || "Lead";
+        const createdVal = record.createdAt || new Date().toISOString();
         const newCust = {
           uid: record.uid || uniqueId,
           name: record.name || "Unnamed Client",
           email: record.email || "unknown@company.com",
-          lifecycleStage: record.lifecycleStage || "Lead",
+          lifecycleStage: stage,
           tier: record.tier || "Free",
           leadScore: Number(record.leadScore) || 50,
           lifetimeValue: Number(record.lifetimeValue) || 0,
@@ -886,7 +917,10 @@ app.post("/api/update-state", async (req, res) => {
           winProbability: Number(record.winProbability) || 50,
           assignedRep: record.assignedRep || "Danielle Gold",
           dealRiskStatus: record.dealRiskStatus || (Number(record.lastInteractionDays) > 14 ? "High Risk: Inactive" : "Low Risk"),
-          createdAt: record.createdAt || new Date().toISOString()
+          createdAt: createdVal,
+          stageHistory: record.stageHistory || {
+            [stage]: createdVal
+          }
         };
         if (newCust.sentiment === "Negative") {
           newCust.dealRiskStatus = "At Risk: Negative Sentiment";
@@ -913,9 +947,17 @@ app.post("/api/update-state", async (req, res) => {
           }
         });
 
+        const oldStage = oldRecord.lifecycleStage;
+        const newStage = payload.lifecycleStage;
+        const updatedHistory = { ...(oldRecord.stageHistory || {}) };
+        if (newStage && newStage !== oldStage) {
+          updatedHistory[newStage] = new Date().toISOString();
+        }
+
         mockCustomers[idx] = {
           ...mockCustomers[idx],
           ...payload,
+          stageHistory: updatedHistory
         };
         // Re-enforce sentiment checks
         if (mockCustomers[idx].sentiment === "Negative") {

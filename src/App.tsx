@@ -54,7 +54,13 @@ const FALLBACK_CUSTOMERS: Customer[] = [
     winProbability: 95,
     assignedRep: "Danielle Gold",
     dealRiskStatus: "Low Risk",
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString(),
+      MQL: new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString(),
+      SQL: new Date(Date.now() - 32 * 24 * 3600 * 1000).toISOString(),
+      Customer: new Date(Date.now() - 25 * 24 * 3600 * 1000).toISOString()
+    },
     growthTrends: [
       { month: "Jan", ltv: 100000 },
       { month: "Feb", ltv: 110000 },
@@ -103,7 +109,10 @@ const FALLBACK_CUSTOMERS: Customer[] = [
     winProbability: 60,
     assignedRep: "Danielle Gold",
     dealRiskStatus: "Medium Risk",
-    createdAt: new Date().toISOString()
+    createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+    stageHistory: {
+      Lead: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString()
+    }
   }
 ];
 
@@ -638,8 +647,13 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           
           <div className="flex items-center space-x-3.5">
-            <div className="p-2.5 bg-[#C5A059] text-[#0A0A0B] rounded-2xl shadow-inner font-bold text-xl tracking-wider select-none font-display">
-              CRM
+            <div className="w-12 h-12 bg-[#0A0A0B] border border-[#C5A059]/30 rounded-2xl overflow-hidden shadow-md flex items-center justify-center shrink-0">
+              <img 
+                src="/src/assets/images/crm_growth_logo_1780197622333.png" 
+                alt="CUSTOMER AND MARKETING CRM Logo" 
+                className="w-full h-full object-cover" 
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div>
               <h1 className="text-xl md:text-2xl font-bold font-display tracking-tight uppercase text-white flex items-center gap-1.5">

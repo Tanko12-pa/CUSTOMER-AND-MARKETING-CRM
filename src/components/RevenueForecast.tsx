@@ -20,6 +20,26 @@ export const RevenueForecast: React.FC<RevenueForecastProps> = ({ customer }) =>
   const [dimensions, setDimensions] = useState({ width: 600, height: 280 });
   const [hoveredPoint, setHoveredPoint] = useState<ChartDataPoint | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [currency, setCurrency] = useState<"USD" | "EUR" | "GBP" | "JPY">("USD");
+
+  const curr = useMemo(() => {
+    const list = [
+      { code: "USD", symbol: "$", rate: 1, locale: "en-US" },
+      { code: "EUR", symbol: "€", rate: 0.92, locale: "de-DE" },
+      { code: "GBP", symbol: "£", rate: 0.79, locale: "en-GB" },
+      { code: "JPY", symbol: "¥", rate: 155, locale: "ja-JP" }
+    ];
+    return list.find(c => c.code === currency) || list[0];
+  }, [currency]);
+
+  const formatVal = (val: number) => {
+    return new Intl.NumberFormat(curr.locale, {
+      style: "currency",
+      currency: curr.code,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(val * curr.rate);
+  };
 
   // Handle responsiveness via ResizeObserver
   useEffect(() => {
@@ -265,8 +285,12 @@ export const RevenueForecast: React.FC<RevenueForecastProps> = ({ customer }) =>
       .ticks(5)
       .tickFormat((d) => {
         const val = Number(d);
-        if (val >= 1000) return `$${(val / 1000).toFixed(0)}K`;
-        return `$${val}`;
+        const converted = val * curr.rate;
+        if (converted >= 1000) {
+          const kVal = (converted / 1000).toFixed(0);
+          return `${curr.symbol}${kVal}K`;
+        }
+        return `${curr.symbol}${converted.toFixed(0)}`;
       });
 
     // Render X Axis
@@ -346,7 +370,7 @@ export const RevenueForecast: React.FC<RevenueForecastProps> = ({ customer }) =>
       trackerDot.style("opacity", 0);
     });
 
-  }, [allPoints, dimensions, customer]);
+  }, [allPoints, dimensions, customer, curr]);
 
   if (!customer) {
     return (
@@ -372,15 +396,32 @@ export const RevenueForecast: React.FC<RevenueForecastProps> = ({ customer }) =>
           </p>
         </div>
 
-        {/* Legend block */}
-        <div className="flex items-center space-x-4 font-mono text-[9px] shrink-0">
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-1.5 rounded-sm bg-[#C5A059]"></span>
-            <span className="text-zinc-400">HISTORIC GROWTH</span>
+        <div className="flex items-center space-x-4 shrink-0 flex-wrap gap-2">
+          {/* Currency selector block */}
+          <div className="flex items-center space-x-2 bg-[#0A0A0B] border border-[#27272A]/80 rounded-lg px-2.5 py-1">
+            <span className="text-[9px] font-mono text-zinc-500 font-bold uppercase">View Currency:</span>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value as any)}
+              className="bg-transparent border-none text-[10px] font-mono text-[#C5A059] font-bold outline-none cursor-pointer"
+            >
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="GBP">GBP (£)</option>
+              <option value="JPY">JPY (¥)</option>
+            </select>
           </div>
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-1.5 rounded-sm bg-emerald-500 border border-dashed border-emerald-300"></span>
-            <span className="text-zinc-400">PROJECTED VALUE</span>
+
+          {/* Legend block */}
+          <div className="flex items-center space-x-4 font-mono text-[9px]">
+            <div className="flex items-center space-x-1.5">
+              <span className="w-2.5 h-1.5 rounded-sm bg-[#C5A059]"></span>
+              <span className="text-zinc-400">HISTORIC</span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <span className="w-2.5 h-1.5 rounded-sm bg-emerald-500"></span>
+              <span className="text-zinc-400">PROJECTED</span>
+            </div>
           </div>
         </div>
       </div>
@@ -389,30 +430,27 @@ export const RevenueForecast: React.FC<RevenueForecastProps> = ({ customer }) =>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-[#0A0A0B] p-4 rounded-xl border border-[#27272A]/70 text-xs">
           <div className="space-y-1 font-sans">
             <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-500 font-bold block">Current LTV Value</span>
-            <div className="text-white font-bold text-base flex items-center gap-1">
-              <DollarSign className="w-4 h-4 text-[#C5A059]" />
-              {(customer.lifetimeValue || 0).toLocaleString()}
+            <div className="text-white font-bold text-sm tracking-tight">
+              {formatVal(customer.lifetimeValue || 0)}
             </div>
           </div>
           <div className="space-y-1 font-sans">
             <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-500 font-bold block">Growth Pace</span>
-            <div className="text-white font-bold text-base flex items-center gap-0.5">
-              <DollarSign className="w-4 h-4 text-emerald-500" />
-              {Math.round(stats.growthRate).toLocaleString()}<span className="text-[10px] text-zinc-500 font-medium">/mo</span>
+            <div className="text-white font-bold text-sm tracking-tight">
+              {formatVal(stats.growthRate)}<span className="text-[10px] text-zinc-500 font-medium">/mo</span>
             </div>
           </div>
           <div className="space-y-1 font-sans">
             <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-500 font-bold block">6-Month LTV Peak</span>
-            <div className="text-white font-bold text-base flex items-center gap-1">
-              <DollarSign className="w-4 h-4 text-emerald-400" />
-              {Math.round(stats.sixMonthForecast).toLocaleString()}
+            <div className="text-white font-bold text-sm tracking-tight">
+              {formatVal(stats.sixMonthForecast)}
             </div>
           </div>
           <div className="space-y-1 font-sans">
             <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-500 font-bold block">Total Projected Delta</span>
-            <div className="text-emerald-400 font-bold text-base flex items-center gap-0.5">
+            <div className="text-emerald-400 font-bold text-sm tracking-tight flex items-center gap-1.5 flex-wrap">
               +{Math.round((stats.projectedIncrease / (customer.lifetimeValue || 1)) * 100)}%
-              <span className="text-[10px] text-emerald-500 font-medium font-mono"> (+${Math.round(stats.projectedIncrease).toLocaleString()})</span>
+              <span className="text-[10px] text-emerald-500 font-medium font-mono"> (+{formatVal(stats.projectedIncrease)})</span>
             </div>
           </div>
         </div>
@@ -454,13 +492,13 @@ export const RevenueForecast: React.FC<RevenueForecastProps> = ({ customer }) =>
             
             <div className="flex items-center justify-between font-mono">
               <span className="text-zinc-500 text-[10px]">Valuation:</span>
-              <span className="font-bold text-white">${Math.round(hoveredPoint.ltv).toLocaleString()}</span>
+              <span className="font-bold text-white">{formatVal(hoveredPoint.ltv)}</span>
             </div>
 
             {hoveredPoint.type === "projected" && (
-              <div className="flex items-center justify-between font-mono border-t border-zinc-800/30 pt-1 mt-1 text-[9px] text-emerald-500">
+              <div className="flex items-center justify-between font-mono border-t border-zinc-800/30 pt-1 mt-1 text-[9px] text-emerald-400">
                 <span>Increment:</span>
-                <span>+${Math.round(hoveredPoint.ltv - customer.lifetimeValue).toLocaleString()}</span>
+                <span>+{formatVal(hoveredPoint.ltv - customer.lifetimeValue)}</span>
               </div>
             )}
           </div>

@@ -76,6 +76,7 @@ export interface Customer {
   account?: AccountInfo;
   interactions?: Interaction[];
   opportunity?: Opportunity;
+  stageHistory?: Partial<Record<LifecycleStage, string>>;
 }
 
 export interface Campaign {
@@ -117,3 +118,21 @@ export interface AIResponse {
   suggestedAction?: any;
   insights?: any;
 }
+
+export const currencySettings = {
+  currencyList: [
+    { code: "USD", symbol: "$", label: "USD ($)", rate: 1, locale: "en-US" },
+    { code: "EUR", symbol: "€", label: "EUR (€)", rate: 0.92, locale: "de-DE" },
+    { code: "GBP", symbol: "£", label: "GBP (£)", rate: 0.79, locale: "en-GB" },
+    { code: "JPY", symbol: "¥", label: "JPY (¥)", rate: 155, locale: "ja-JP" }
+  ]
+};
+
+export const formatCurrency = (val: number, currencyCode: string = "USD", locale: string = "en-US") => {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: currencyCode,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(val);
+};
