@@ -1,3 +1,13 @@
+if (import.meta.env.DEV) {
+  window.addEventListener('unhandledrejection', (event) => {
+    // Silently suppress Vite websocket connection noise in the UI console
+    if (event.reason?.message?.includes('WebSocket')) {
+      event.preventDefault();
+      console.warn('Vite HMR WebSocket connection paused or resetting.');
+    }
+  });
+}
+
 if (typeof window !== 'undefined') {
   try {
     // Test if localStorage is accessible

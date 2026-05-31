@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Customer } from "../types";
 import { RevenueForecast } from "./RevenueForecast";
 import { 
@@ -848,46 +849,60 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
                 Select Prospect Account ({filteredCustomers.length}):
               </span>
               <div className="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto pr-1">
-                {filteredCustomers.length > 0 ? (
-                  filteredCustomers.map(c => {
-                    const isSelected = activeCustomer?.uid === c.uid;
-                    const trend = getLeadScoreTrend(c);
-                    return (
-                      <button
-                        key={c.uid}
-                        onClick={() => handleSelectCustomer(c.uid)}
-                        type="button"
-                        className={`p-2 rounded-xl text-left border transition-all truncate text-xs cursor-pointer flex flex-col justify-between h-[64px] ${
-                          isSelected 
-                          ? "bg-[#C5A059]/10 border-[#C5A059] text-white" 
-                          : "bg-[#0A0A0B] border-[#27272A] hover:border-[#71717A]/40 text-[#A1A1AA] hover:text-[#E4E4E7]"
-                        }`}
-                      >
-                        <span className="font-semibold text-white block truncate w-full">{c.name}</span>
-                        <div className="flex justify-between items-center text-[9px] font-mono mt-1 w-full text-[#71717A]">
-                          <span>{c.tier}</span>
-                          <span className="flex items-center space-x-0.5 text-[#A1A1AA]">
-                            <span>LS: {c.leadScore}</span>
-                            {trend === "up" ? (
-                              <ArrowUp className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
-                            ) : trend === "down" ? (
-                              <ArrowDown className="w-2.5 h-2.5 text-red-400 shrink-0" />
-                            ) : (
-                              <span className="text-[#71717A] text-[7px] font-bold shrink-0">─</span>
-                            )}
-                          </span>
-                          <span className={`font-bold ${c.winProbability > 75 ? "text-emerald-400" : c.winProbability > 50 ? "text-amber-400" : "text-red-400"}`}>
-                            {c.winProbability}% win
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="col-span-2 py-4 text-center text-xs font-mono text-[#71717A] bg-[#0A0A0B] border border-[#27272A] rounded-xl">
-                    No matching accounts in active segment filter.
-                  </div>
-                )}
+                <AnimatePresence mode="popLayout">
+                  {filteredCustomers.length > 0 ? (
+                    filteredCustomers.map(c => {
+                      const isSelected = activeCustomer?.uid === c.uid;
+                      const trend = getLeadScoreTrend(c);
+                      return (
+                        <motion.button
+                          layout
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          transition={{ duration: 0.2 }}
+                          key={c.uid}
+                          onClick={() => handleSelectCustomer(c.uid)}
+                          type="button"
+                          className={`p-2 rounded-xl text-left border transition-all truncate text-xs cursor-pointer flex flex-col justify-between h-[64px] ${
+                            isSelected 
+                            ? "bg-[#C5A059]/10 border-[#C5A059] text-white" 
+                            : "bg-[#0A0A0B] border-[#27272A] hover:border-[#71717A]/40 text-[#A1A1AA] hover:text-[#E4E4E7]"
+                          }`}
+                        >
+                          <span className="font-semibold text-white block truncate w-full">{c.name}</span>
+                          <div className="flex justify-between items-center text-[9px] font-mono mt-1 w-full text-[#71717A]">
+                            <span>{c.tier}</span>
+                            <span className="flex items-center space-x-0.5 text-[#A1A1AA]">
+                              <span>LS: {c.leadScore}</span>
+                              {trend === "up" ? (
+                                <ArrowUp className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                              ) : trend === "down" ? (
+                                <ArrowDown className="w-2.5 h-2.5 text-red-400 shrink-0" />
+                              ) : (
+                                <span className="text-[#71717A] text-[7px] font-bold shrink-0">─</span>
+                              )}
+                            </span>
+                            <span className={`font-bold ${c.winProbability > 75 ? "text-emerald-400" : c.winProbability > 50 ? "text-amber-400" : "text-red-400"}`}>
+                              {c.winProbability}% win
+                            </span>
+                          </div>
+                        </motion.button>
+                      );
+                    })
+                  ) : (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      key="empty-segment"
+                      className="col-span-2 py-4 text-center text-xs font-mono text-[#71717A] bg-[#0A0A0B] border border-[#27272A] rounded-xl font-sans"
+                    >
+                      No matching accounts in active segment filter.
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 

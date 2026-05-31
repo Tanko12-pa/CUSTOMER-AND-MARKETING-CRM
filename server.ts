@@ -783,32 +783,48 @@ app.post("/api/sync-backend-crm-state", async (req, res) => {
 app.get("/api/state", async (req, res) => {
   if (db) {
     try {
+      const tempCustomers: any[] = [];
       const customersSn = await getDocs(collection(db, "customers"));
-      mockCustomers = [];
       customersSn.forEach(d => {
-        mockCustomers.push(d.data() as any);
+        tempCustomers.push(d.data() as any);
       });
+      mockCustomers = tempCustomers;
+    } catch (err) {
+      console.warn("Failed to fetch customers from Firestore. Retaining in-memory mock state.", err);
+    }
 
+    try {
+      const tempCampaigns: any[] = [];
       const campaignsSn = await getDocs(collection(db, "marketing_campaigns"));
-      mockCampaigns = [];
       campaignsSn.forEach(d => {
-        mockCampaigns.push(d.data() as any);
+        tempCampaigns.push(d.data() as any);
       });
+      mockCampaigns = tempCampaigns;
+    } catch (err) {
+      console.warn("Failed to fetch campaigns from Firestore. Retaining in-memory mock state.", err);
+    }
 
+    try {
+      const tempTickets: any[] = [];
       const ticketsSn = await getDocs(collection(db, "support_tickets"));
-      mockSupportTickets = [];
       ticketsSn.forEach(d => {
-        mockSupportTickets.push(d.data() as any);
+        tempTickets.push(d.data() as any);
       });
+      mockSupportTickets = tempTickets;
+    } catch (err) {
+      console.warn("Failed to fetch support tickets from Firestore. Retaining in-memory mock state.", err);
+    }
 
+    try {
+      const tempLogs: any[] = [];
       const logsSn = await getDocs(collection(db, "audit_logs"));
-      mockAuditLogs = [];
       logsSn.forEach(d => {
-        mockAuditLogs.push(d.data() as any);
+        tempLogs.push(d.data() as any);
       });
+      mockAuditLogs = tempLogs;
       mockAuditLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     } catch (err) {
-      console.error("Failed to refresh state from Firestore:", err);
+      console.warn("Failed to fetch audit logs from Firestore. Retaining in-memory mock state.", err);
     }
   }
 
@@ -2211,84 +2227,109 @@ async function syncFirestoreData() {
     console.log("Synchronizing Firestore collections...");
     
     // 1. Users
-    const usersCollection = collection(db, "users");
-    const usersSnapshot = await getDocs(usersCollection);
-    if (usersSnapshot.empty) {
-      console.log("Firestore empty: Seeding users...");
-      for (const u of mockUsersList) {
-        await setDoc(doc(db, "users", u.email.toLowerCase()), u);
+    try {
+      const usersCollection = collection(db, "users");
+      const usersSnapshot = await getDocs(usersCollection);
+      if (usersSnapshot.empty) {
+        console.log("Firestore empty: Seeding users...");
+        for (const u of mockUsersList) {
+          await setDoc(doc(db, "users", u.email.toLowerCase()), u);
+        }
+      } else {
+        const tempUsers: any[] = [];
+        usersSnapshot.forEach(docSnap => {
+          tempUsers.push(docSnap.data() as any);
+        });
+        mockUsersList = tempUsers;
       }
-    } else {
-      mockUsersList = [];
-      usersSnapshot.forEach(docSnap => {
-        mockUsersList.push(docSnap.data() as any);
-      });
+    } catch (usersErr) {
+      console.warn("Failed to sync users collection from Firestore. Retaining in-memory mock state.", usersErr);
     }
 
     // 2. Customers
-    const customersCollection = collection(db, "customers");
-    const customersSnapshot = await getDocs(customersCollection);
-    if (customersSnapshot.empty) {
-      console.log("Firestore empty: Seeding customers...");
-      for (const c of mockCustomers) {
-        await setDoc(doc(db, "customers", c.uid), c);
+    try {
+      const customersCollection = collection(db, "customers");
+      const customersSnapshot = await getDocs(customersCollection);
+      if (customersSnapshot.empty) {
+        console.log("Firestore empty: Seeding customers...");
+        for (const c of mockCustomers) {
+          await setDoc(doc(db, "customers", c.uid), c);
+        }
+      } else {
+        const tempCustomers: any[] = [];
+        customersSnapshot.forEach(docSnap => {
+          tempCustomers.push(docSnap.data() as any);
+        });
+        mockCustomers = tempCustomers;
       }
-    } else {
-      mockCustomers = [];
-      customersSnapshot.forEach(docSnap => {
-        mockCustomers.push(docSnap.data() as any);
-      });
+    } catch (custErr) {
+      console.warn("Failed to sync customers collection from Firestore. Retaining in-memory mock state.", custErr);
     }
 
     // 3. Campaigns
-    const campaignsCollection = collection(db, "marketing_campaigns");
-    const campaignsSnapshot = await getDocs(campaignsCollection);
-    if (campaignsSnapshot.empty) {
-      console.log("Firestore empty: Seeding marketing campaigns...");
-      for (const camp of mockCampaigns) {
-        await setDoc(doc(db, "marketing_campaigns", camp.campaign_id), camp);
+    try {
+      const campaignsCollection = collection(db, "marketing_campaigns");
+      const campaignsSnapshot = await getDocs(campaignsCollection);
+      if (campaignsSnapshot.empty) {
+        console.log("Firestore empty: Seeding marketing campaigns...");
+        for (const camp of mockCampaigns) {
+          await setDoc(doc(db, "marketing_campaigns", camp.campaign_id), camp);
+        }
+      } else {
+        const tempCampaigns: any[] = [];
+        campaignsSnapshot.forEach(docSnap => {
+          tempCampaigns.push(docSnap.data() as any);
+        });
+        mockCampaigns = tempCampaigns;
       }
-    } else {
-      mockCampaigns = [];
-      campaignsSnapshot.forEach(docSnap => {
-        mockCampaigns.push(docSnap.data() as any);
-      });
+    } catch (campErr) {
+      console.warn("Failed to sync campaigns collection from Firestore. Retaining in-memory mock state.", campErr);
     }
 
     // 4. Support Tickets
-    const ticketsCollection = collection(db, "support_tickets");
-    const ticketsSnapshot = await getDocs(ticketsCollection);
-    if (ticketsSnapshot.empty) {
-      console.log("Firestore empty: Seeding support tickets...");
-      for (const ticket of mockSupportTickets) {
-        await setDoc(doc(db, "support_tickets", ticket.ticket_id), ticket);
+    try {
+      const ticketsCollection = collection(db, "support_tickets");
+      const ticketsSnapshot = await getDocs(ticketsCollection);
+      if (ticketsSnapshot.empty) {
+        console.log("Firestore empty: Seeding support tickets...");
+        for (const ticket of mockSupportTickets) {
+          await setDoc(doc(db, "support_tickets", ticket.ticket_id), ticket);
+        }
+      } else {
+        const tempTickets: any[] = [];
+        ticketsSnapshot.forEach(docSnap => {
+          tempTickets.push(docSnap.data() as any);
+        });
+        mockSupportTickets = tempTickets;
       }
-    } else {
-      mockSupportTickets = [];
-      ticketsSnapshot.forEach(docSnap => {
-        mockSupportTickets.push(docSnap.data() as any);
-      });
+    } catch (ticketErr) {
+      console.warn("Failed to sync support tickets collection from Firestore. Retaining in-memory mock state.", ticketErr);
     }
 
     // 5. Audit Logs
-    const logsCollection = collection(db, "audit_logs");
-    const logsSnapshot = await getDocs(logsCollection);
-    if (logsSnapshot.empty) {
-      console.log("Firestore empty: Seeding audit logs...");
-      for (const log of mockAuditLogs) {
-        await setDoc(doc(db, "audit_logs", log.id), log);
+    try {
+      const logsCollection = collection(db, "audit_logs");
+      const logsSnapshot = await getDocs(logsCollection);
+      if (logsSnapshot.empty) {
+        console.log("Firestore empty: Seeding audit logs...");
+        for (const log of mockAuditLogs) {
+          await setDoc(doc(db, "audit_logs", log.id), log);
+        }
+      } else {
+        const tempLogs: any[] = [];
+        logsSnapshot.forEach(docSnap => {
+          tempLogs.push(docSnap.data() as any);
+        });
+        mockAuditLogs = tempLogs;
+        mockAuditLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       }
-    } else {
-      mockAuditLogs = [];
-      logsSnapshot.forEach(docSnap => {
-        mockAuditLogs.push(docSnap.data() as any);
-      });
-      mockAuditLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    } catch (logErr) {
+      console.warn("Failed to sync audit logs collection from Firestore. Retaining in-memory mock state.", logErr);
     }
 
-    console.log("Cloud Firestore CRM database successfully fully synchronized.");
+    console.log("Cloud Firestore CRM database synchronization cycle executed.");
   } catch (err) {
-    console.error("Warning: Error syncing with Firestore database collections:", err);
+    console.error("Warning: Unhandled error in syncFirestoreData. Falling back to robust in-memory state:", err);
   }
 }
 

@@ -222,24 +222,35 @@ export function SubscriptionGate({
     if (errorText) setErrorText("");
   };
 
+  const handleFormToggle = (targetMode: "signUp" | "signIn" | "forgotPassword") => {
+    setErrorText('');     // Clear out banners
+    setEmail('');         // Reset the fields so old parameters don't hang around
+    setPassword('');  
+    setName('');      
+    setMode(targetMode);
+  };
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorText("");
+    setErrorText(''); // Clear previous error banners
 
-    if (!name.trim()) return setErrorText("Full name is required.");
-    if (!email.trim()) return setErrorText("Email address is required.");
-    if (!password) return setErrorText("Password is required.");
-    if (password.length < 6) return setErrorText("Password must be at least 6 characters.");
+    // Form field safety validation
+    if (!email.includes('@') || password.length < 6) {
+      setErrorText("Please enter a valid email address and a password of at least 6 characters.");
+      return;
+    }
 
     setLocalLoading(true);
     try {
-      await registerWithTrial(name, email, password);
-      // Success will update root observer
+      const result = await registerWithTrial(name, email, password);
+      console.log("Account successfully created!", result);
     } catch (err: any) {
-      if (err.message?.includes("email-already-in-use") || err.code === "auth/email-already-in-use" || err.message?.includes("already-in-use")) {
+      // Check if the account is a duplicate
+      if (err.message?.includes('email-already-in-use') || err.code === 'auth/email-already-in-use' || err.message?.includes('already-in-use')) {
         setErrorText("An account with this email already exists. Please click 'Sign In' below to access your trial.");
       } else {
-        setErrorText(err.message || "An authentication error occurred.");
+        // Safely pass only the message string, never raw code blocks
+        setErrorText(err.message || "An unexpected error occurred during registration.");
       }
     } finally {
       setLocalLoading(false);
@@ -599,7 +610,7 @@ export function SubscriptionGate({
             <button type="submit" style={S.btnGold} disabled={isAuthLoading}>
               {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>Dispatch Reset Link →</span>}
             </button>
-            <button type="button" style={S.btnDark} onClick={() => { setMode("signIn"); setErrorText(""); setForgotEmailSent(false); }}>
+            <button type="button" style={S.btnDark} onClick={() => { handleFormToggle("signIn"); setForgotEmailSent(false); }}>
               ← Go Back
             </button>
           </form>
@@ -662,8 +673,8 @@ export function SubscriptionGate({
                 value={email}
                 style={S.inputEl}
                 onChange={(e) => {
-                  setEmail(e.target.value);
-                  clearError();
+                  setEmail(e.target.value.trim());
+                  if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
                 }}
               />
             </div>
@@ -679,7 +690,7 @@ export function SubscriptionGate({
                 style={S.inputEl}
                 onChange={(e) => {
                   setPassword(e.target.value);
-                  clearError();
+                  if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
                 }}
               />
             </div>
@@ -690,7 +701,7 @@ export function SubscriptionGate({
 
             <div style={S.footerRow}>
               Already registered?{" "}
-              <span style={S.link} onClick={() => { setMode("signIn"); setErrorText(""); }}>Sign In</span>
+              <span style={S.link} onClick={() => handleFormToggle("signIn")}>Sign In</span>
             </div>
           </form>
         </div>
@@ -735,8 +746,8 @@ export function SubscriptionGate({
               value={email}
               style={S.inputEl}
               onChange={(e) => {
-                setEmail(e.target.value);
-                clearError();
+                setEmail(e.target.value.trim());
+                if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
               }}
             />
           </div>
@@ -752,12 +763,12 @@ export function SubscriptionGate({
               style={S.inputEl}
               onChange={(e) => {
                 setPassword(e.target.value);
-                clearError();
+                if (errorText) setErrorText(''); // Instantly hides the red alert banner on typing
               }}
             />
           </div>
 
-          <div style={S.forgotRow} onClick={() => { setMode("forgotPassword"); setErrorText(""); setForgotEmailSent(false); }}>
+          <div style={S.forgotRow} onClick={() => handleFormToggle("forgotPassword")}>
             Forgot Password?
           </div>
 
@@ -767,7 +778,7 @@ export function SubscriptionGate({
 
           <div style={S.footerRow}>
             First time visitor evaluating CRM?{" "}
-            <span style={S.link} onClick={() => { setMode("signUp"); setErrorText(""); }}>Register Free Trial</span>
+            <span style={S.link} onClick={() => handleFormToggle("signUp")}>Register Free Trial</span>
           </div>
         </form>
       </div>

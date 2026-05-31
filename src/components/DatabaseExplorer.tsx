@@ -28,9 +28,10 @@ interface DatabaseExplorerProps {
   tickets: SupportTicket[];
   logs: AuditLog[];
   onUpdateState: (type: string, payload: any) => Promise<void>;
+  showToast?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdateState }: DatabaseExplorerProps) {
+export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdateState, showToast }: DatabaseExplorerProps) {
   const [activeTab, setActiveTab] = useState<"explorer" | "rules" | "logs">("explorer");
   const [activeCollection, setActiveCollection] = useState<"customers" | "campaigns" | "support_tickets">("customers");
   
@@ -220,12 +221,19 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
         await new Promise(resolve => setTimeout(resolve, i === validatedRecords.length - 1 ? 50 : 220));
       }
 
+      const totalCount = validatedRecords.length;
       setImportFileName("");
       setValidatedRecords([]);
       setImportErrors([]);
       setShowBulkImport(false);
+      if (showToast) {
+        showToast(`Successfully imported & synchronized ${totalCount} CRM profiles with Cloud Firestore!`, "success");
+      }
     } catch (err: any) {
       setImportErrors([`Import operation failed: ${err.message || err}`]);
+      if (showToast) {
+        showToast(`Bulk record import failed: ${err.message || err}`, "error");
+      }
     } finally {
       setIsImportingInProgress(false);
       setCurrentImportName(null);
@@ -243,6 +251,9 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    if (showToast) {
+      showToast("CRM Customer Data Import template downloaded successfully.", "info");
+    }
   };
 
   // Create user form
@@ -403,6 +414,9 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    if (showToast) {
+      showToast(`Successfully exported ${rows.length} ${activeCollection} records to ${filename}!`, "success");
+    }
   };
 
   const handleOpenBulkDeleteConfirm = () => {
