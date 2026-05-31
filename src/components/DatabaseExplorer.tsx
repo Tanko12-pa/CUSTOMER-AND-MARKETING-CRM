@@ -419,6 +419,28 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
     }
   };
 
+  const handleDownloadAllDataJSON = () => {
+    try {
+      const dataStr = JSON.stringify(customers, null, 2);
+      const blob = new Blob([dataStr], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `crm_customer_records_backup_${new Date().toISOString().slice(0, 10)}.json`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (showToast) {
+        showToast(`Successfully backed up all ${customers.length} customer records to JSON backup file!`, "success");
+      }
+    } catch (err: any) {
+      if (showToast) {
+        showToast(`Failed to generate JSON backup: ${err.message || err}`, "error");
+      }
+    }
+  };
+
   const handleOpenBulkDeleteConfirm = () => {
     if (selectedUids.length === 0) return;
     setShowBulkDeleteConfirm(true);
@@ -583,17 +605,30 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
 
           {/* Records tree explorer list */}
           <div className="lg:col-span-5 space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
-            <div className="flex items-center justify-between gap-2 bg-[#0A0A0B] p-2.5 rounded-xl border border-[#27272A] mb-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-[#0A0A0B] p-2.5 rounded-xl border border-[#27272A] mb-1">
               <h4 className="text-[10px] font-bold text-[#A1A1AA] uppercase tracking-wider font-mono">Document path: /{activeCollection}/{"{UID}"}</h4>
-              <button
-                onClick={handleExportToCSV}
-                className="flex items-center space-x-1.5 px-2 py-1 text-[10px] text-[#C5A059] bg-[#C5A059]/10 border border-[#C5A059]/30 hover:bg-[#C5A059]/20 transition-all rounded font-bold uppercase font-mono cursor-pointer shrink-0"
-                title={`Export ${activeCollection} collection directly to offline CSV spreadsheet`}
-                type="button"
-              >
-                <Download className="w-3 h-3" />
-                <span>Export CSV</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {activeCollection === "customers" && (
+                  <button
+                    onClick={handleDownloadAllDataJSON}
+                    className="flex items-center space-x-1.5 px-2 py-1 text-[10px] text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 hover:bg-emerald-950/40 transition-all rounded font-bold uppercase font-mono cursor-pointer shrink-0"
+                    title="Generate a formatted JSON backup of all current customer profiles"
+                    type="button"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download All Data</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleExportToCSV}
+                  className="flex items-center space-x-1.5 px-2 py-1 text-[10px] text-[#C5A059] bg-[#C5A059]/10 border border-[#C5A059]/30 hover:bg-[#C5A059]/20 transition-all rounded font-bold uppercase font-mono cursor-pointer shrink-0"
+                  title={`Export ${activeCollection} collection directly to offline CSV spreadsheet`}
+                  type="button"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
             </div>
             
             {activeCollection === "customers" && (

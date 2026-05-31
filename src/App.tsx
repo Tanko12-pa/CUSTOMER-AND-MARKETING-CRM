@@ -720,7 +720,7 @@ export default function App() {
 
       {/* CORE KPI CARDS & ANALYTICS CLUSTER */}
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-6" id="dashboard-analytics-region">
-        <KPICards customers={customers} campaigns={campaigns} tickets={tickets} />
+        <KPICards customers={customers} campaigns={campaigns} tickets={tickets} logs={auditLogs} />
 
         {/* PIPELINE DATA VISUALIZER DISPLAY */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

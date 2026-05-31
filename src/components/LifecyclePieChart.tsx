@@ -145,6 +145,7 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
       .data(pathData)
       .enter()
       .append("path")
+      .attr("class", "pie-slice")
       .attr("d", arc as any)
       .attr("fill", (d) => colors[d.data.stage as LifecycleStage])
       .attr("stroke", "#141416")
@@ -238,6 +239,47 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
     });
 
   }, [customers, selectedStage, stageData]);
+
+  // 1b. Fast path selector hover transitions for legend sync
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svgElement = d3.select(svgRef.current);
+    
+    const width = 240;
+    const height = 240;
+    const radius = Math.min(width, height) / 2 - 15;
+    
+    const arc = d3
+      .arc<any>()
+      .innerRadius(radius * 0.55)
+      .outerRadius(radius)
+      .cornerRadius(6)
+      .padAngle(0.04);
+
+    const arcHover = d3
+      .arc<any>()
+      .innerRadius(radius * 0.5)
+      .outerRadius(radius + 8)
+      .cornerRadius(8)
+      .padAngle(0.02);
+
+    svgElement.selectAll(".pie-slice").each(function(d: any) {
+      if (!d) return;
+      const isHovered = hoveredData && hoveredData.stage === d.data.stage;
+      const isSelected = selectedStage === d.data.stage;
+      
+      d3.select(this)
+        .transition()
+        .duration(220)
+        .ease(d3.easeCubicOut)
+        .attr("d", (isHovered || isSelected) ? (arcHover as any) : (arc as any))
+        .attr("opacity", () => {
+          if (isHovered || isSelected) return 1.0;
+          if (selectedStage || hoveredData) return 0.4;
+          return 1.0;
+        });
+    });
+  }, [hoveredData, selectedStage]);
 
   // 2. Compute Pipeline Velocity Average Transition Days
   const velocityData = useMemo(() => {
