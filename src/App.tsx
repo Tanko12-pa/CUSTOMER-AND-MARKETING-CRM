@@ -470,37 +470,36 @@ export default function App() {
             const trialDaysLeft = Math.max(0, (trialExpiresAt - Date.now()) / (1000 * 3600 * 24));
 
             setCurrentUser({
-              email: firebaseUser.email,
-              name: data.name || firebaseUser.displayName || "",
+              email: firebaseUser.email || "guest-operator@company.com",
+              name: data.name || firebaseUser.displayName || "Guest Operator",
               uid: firebaseUser.uid,
-              trialStartDate: new Date(trialExpiresAt - 7 * 24 * 3600 * 1000).toISOString(),
-              plan: userPlan,
-              active: hasActiveSubscription || !isExpired,
-              trialDaysLeft: trialDaysLeft,
-              subscriptionActive: hasActiveSubscription
+              trialStartDate: new Date().toISOString(),
+              plan: "standard",
+              active: true,
+              trialDaysLeft: 0,
+              subscriptionActive: true
             });
           } else {
             // First time register doc sync fallback
-            const trialDuration = 7 * 24 * 60 * 60 * 1000;
-            const trialExpiresAt = Date.now() + trialDuration;
+            const trialExpiresAt = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000; // 100 years
             const userData = {
               uid: firebaseUser.uid,
-              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
-              email: firebaseUser.email || "",
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Guest Operator",
+              email: firebaseUser.email || "guest-operator@company.com",
               trialExpiresAt: trialExpiresAt,
-              hasActiveSubscription: false,
-              plan: "trial"
+              hasActiveSubscription: true,
+              plan: "standard"
             };
             await setDoc(userRef, userData);
             setCurrentUser({
-              email: firebaseUser.email,
+              email: userData.email,
               name: userData.name,
               uid: firebaseUser.uid,
-              trialStartDate: new Date(trialExpiresAt - 7 * 24 * 3600 * 1000).toISOString(),
-              plan: "trial",
+              trialStartDate: new Date().toISOString(),
+              plan: "standard",
               active: true,
-              trialDaysLeft: 7,
-              subscriptionActive: false
+              trialDaysLeft: 0,
+              subscriptionActive: true
             });
           }
         } catch (err) {

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Sparkles, ShieldCheck, Mail, User, Lock, CreditCard, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
-import { registerWithTrial, signInAndCheckTrial, resetUserPassword } from "../firebase";
+import { registerWithTrial, signInAndCheckTrial, resetUserPassword, signInAsGuest } from "../firebase";
 
 interface SubscriptionGateProps {
   onRegisterTrial: (name: string, email: string) => Promise<void>;
@@ -242,6 +242,19 @@ export function SubscriptionGate({
     setPassword('');  
     setName('');      
     setMode(targetMode);
+  };
+
+  const handleGuestAccess = async () => {
+    setErrorText("");
+    setLocalLoading(true);
+    try {
+      await signInAsGuest();
+      console.log("Guest access granted successfully");
+    } catch (err: any) {
+      setErrorText(err.message || "Failed to initiate guest workspace node.");
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -667,6 +680,31 @@ export function SubscriptionGate({
           </div>
           <hr style={{ ...S.rule, marginTop: "1rem" }} />
 
+          {/* Instant Guest Access Button (No Sign-Up) */}
+          <button
+            type="button"
+            onClick={handleGuestAccess}
+            style={{
+              ...S.btnGold,
+              background: "linear-gradient(135deg, #c5a059 0%, #ecd09e 100%)",
+              color: "#0c0c0d",
+              boxShadow: "0 4px 12px rgba(197, 160, 89, 0.25)",
+              fontWeight: "bold",
+              marginBottom: "1.2rem",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.15)"
+            }}
+            disabled={isAuthLoading}
+          >
+            {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>⚡ Instant Guest Access (No Sign-Up)</span>}
+          </button>
+
+          <div style={{ display: "flex", alignItems: "center", textTransform: "uppercase", fontSize: 9, color: C.muted, marginBottom: "1.2rem", fontFamily: "'Courier New', monospace" }}>
+            <span style={{ flex: 1, borderTop: `1px solid ${C.border}` }}></span>
+            <span style={{ padding: "0 10px", fontWeight: "bold", letterSpacing: "0.08em" }}>Or Register Secure Account</span>
+            <span style={{ flex: 1, borderTop: `1px solid ${C.border}` }}></span>
+          </div>
+
           {errorText && <div style={S.errBanner}>{errorText}</div>}
 
           <form onSubmit={handleSignUp} style={{ display: "flex", flexDirection: "column" }}>
@@ -747,6 +785,31 @@ export function SubscriptionGate({
           </span>
         </div>
         <hr style={{ ...S.rule, marginTop: "1rem" }} />
+
+        {/* Instant Guest Access Button (No Sign-Up) */}
+        <button
+          type="button"
+          onClick={handleGuestAccess}
+          style={{
+            ...S.btnGold,
+            background: "linear-gradient(135deg, #c5a059 0%, #ecd09e 100%)",
+            color: "#0c0c0d",
+            boxShadow: "0 4px 12px rgba(197, 160, 89, 0.25)",
+            fontWeight: "bold",
+            marginBottom: "1.2rem",
+            borderRadius: "8px",
+            border: "1px solid rgba(255,255,255,0.15)"
+          }}
+          disabled={isAuthLoading}
+        >
+          {isAuthLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span>⚡ Instant Guest Access (No Accounts)</span>}
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", textTransform: "uppercase", fontSize: 9, color: C.muted, marginBottom: "1.2rem", fontFamily: "'Courier New', monospace" }}>
+          <span style={{ flex: 1, borderTop: `1px solid ${C.border}` }}></span>
+          <span style={{ padding: "0 10px", fontWeight: "bold", letterSpacing: "0.08em" }}>Or Log In with Credentials</span>
+          <span style={{ flex: 1, borderTop: `1px solid ${C.border}` }}></span>
+        </div>
 
         {errorText && <div style={S.errBanner}>{errorText}</div>}
 

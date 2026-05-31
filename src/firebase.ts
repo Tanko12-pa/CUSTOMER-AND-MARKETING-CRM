@@ -4,7 +4,8 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   sendPasswordResetEmail,
-  updateProfile
+  updateProfile,
+  signInAnonymously
 } from "firebase/auth";
 import { 
   initializeFirestore, 
@@ -139,5 +140,51 @@ export async function resetUserPassword(email: string) {
     return "Password reset link dispatched to your email.";
   } catch (error: any) {
     throw new Error(error.message.replace("Firebase: ", ""));
+  }
+}
+
+/**
+ * 4. INSTANT GUEST PASS: Logs in anonymously, or uses a fallback persistent guest user doc
+ */
+export async function signInAsGuest() {
+  try {
+    // Try to log in as guest anonymously
+    const credential = await signInAnonymously(auth);
+    if (credential.user) {
+      await setDoc(doc(db, "users", credential.user.uid), {
+        uid: credential.user.uid,
+        name: "Guest Operator",
+        email: "guest-operator@company.com",
+        trialExpiresAt: Date.now() + 100 * 365 * 24 * 60 * 60 * 1000, // 100 years!
+        hasActiveSubscription: true,
+        plan: "standard"
+      });
+    }
+    return credential.user;
+  } catch (error: any) {
+    console.warn("Anonymous guest auth failed, trying predefined email fallback:", error);
+    const email = "operator@company.com";
+    const password = "admin_password_999";
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      return userCredential.user;
+    } catch (err: any) {
+      // Create guest credentials
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: "Guest Operator" });
+        await setDoc(doc(db, "users", userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          name: "Guest Operator",
+          email: email,
+          trialExpiresAt: Date.now() + 100 * 365 * 24 * 60 * 60 * 1000,
+          hasActiveSubscription: true,
+          plan: "standard"
+        });
+        return userCredential.user;
+      } catch (regErr: any) {
+        throw new Error(regErr.message || "Failed guest access setup fallback");
+      }
+    }
   }
 }
