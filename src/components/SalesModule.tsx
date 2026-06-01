@@ -29,9 +29,10 @@ interface SalesModuleProps {
   customers: Customer[];
   onUpdateState: (type: string, payload: any) => Promise<void>;
   onTriggerIntelligence: (data: { uid: string; dealValue: number; lastInteractionDays: number }) => Promise<void>;
+  showToast?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }: SalesModuleProps) {
+export function SalesModule({ customers, onUpdateState, onTriggerIntelligence, showToast }: SalesModuleProps) {
   const [filterType, setFilterType] = useState<"all" | "high-risk" | "enterprise" | "in-progress">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUid, setSelectedUid] = useState<string>(customers[0]?.uid || "");
@@ -138,6 +139,14 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
   const [suggestFixLoading, setSuggestFixLoading] = useState<Record<string, boolean>>({});
   const [suggestFixResult, setSuggestFixResult] = useState<Record<string, string>>({});
   const [expandedFixUid, setExpandedFixUid] = useState<string | null>(null);
+
+  // New Suggest Fix Modal states for High Risk CRM updates
+  const [activeSuggestModalCustomer, setActiveSuggestModalCustomer] = useState<Customer | null>(null);
+  const [suggestModalEmailSubject, setSuggestModalEmailSubject] = useState("");
+  const [suggestModalEmailBody, setSuggestModalEmailBody] = useState("");
+  const [suggestModalLoading, setSuggestModalLoading] = useState(false);
+  const [suggestModalPlan, setSuggestModalPlan] = useState("");
+  const [crmSaving, setCrmSaving] = useState(false);
 
   // Follow-up Reminders states
   const [reminderTime, setReminderTime] = useState("");
@@ -373,10 +382,12 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
     const targetCustomer = customers.find(c => c.uid === alertUid);
     if (!targetCustomer) return;
 
-    setExpandedFixUid(alertUid === expandedFixUid ? null : alertUid);
-    if (suggestFixResult[alertUid]) return;
+    setActiveSuggestModalCustomer(targetCustomer);
+    setSuggestModalLoading(true);
+    setSuggestModalPlan("");
+    setSuggestModalEmailSubject(`[ACTION REQUIRED] Account Recovery Alignment: ${targetCustomer.name}`);
+    setSuggestModalEmailBody("");
 
-    setSuggestFixLoading(prev => ({ ...prev, [alertUid]: true }));
     try {
       const response = await fetch("/api/gemini/suggest-fix", {
         method: "POST",
@@ -384,12 +395,53 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
         body: JSON.stringify({ customer: targetCustomer })
       });
       const data = await response.json();
-      setSuggestFixResult(prev => ({ ...prev, [alertUid]: data.text }));
+      
+      const planText = data.text || "No custom plan generated. Standard account realignment required.";
+      setSuggestModalPlan(planText);
+      
+      const emailBodyText = `Dear ${targetCustomer.name} Team,\n\nI hope this email finds you well.\n\nFollowing up on our partnership parameters, we've outlined a potential remediation strategy to enhance your platform performance:\n\n---\n${planText}\n---\n\nLet me know if you would be open to a 10-minute sync to finalize these details and keep your enterprise alignment intact.\n\nBest regards,\n${targetCustomer.assignedRep || "CRM Account Advisor"}\nGlobal Account Management`;
+      
+      setSuggestModalEmailBody(emailBodyText);
+      setSuggestFixResult(prev => ({ ...prev, [alertUid]: planText }));
     } catch (err) {
       console.error(err);
-      setSuggestFixResult(prev => ({ ...prev, [alertUid]: "Could not retrieve copilot recommendation. Check connections." }));
+      const errorMsg = "Could not retrieve automated Gemini mitigation plan. Please manually intervene.";
+      setSuggestModalPlan(errorMsg);
+      setSuggestModalEmailBody(`Dear ${targetCustomer.name} Team,\n\nI want to schedule a brief partner sync regarding your tier configuration.\n\nBest,\n${targetCustomer.assignedRep || "CRM Team"}`);
+      setSuggestFixResult(prev => ({ ...prev, [alertUid]: errorMsg }));
     } finally {
-      setSuggestFixLoading(prev => ({ ...prev, [alertUid]: false }));
+      setSuggestModalLoading(false);
+    }
+  };
+
+  const handleSendToCrm = async () => {
+    if (!activeSuggestModalCustomer) return;
+    setCrmSaving(true);
+    try {
+      const timestamp = new Date().toLocaleString();
+      const mitigationPlanLine = `\n- [Gemini Recovery Plan & Email Draft Synced at ${timestamp}]:\nPlanned Mitigation Strategy:\n${suggestModalPlan}\n\nDraft Email outreach Subject: "${suggestModalEmailSubject}"\nDraft Email Body:\n${suggestModalEmailBody}\n`;
+      const updatedNotes = activeSuggestModalCustomer.notes ? `${activeSuggestModalCustomer.notes}${mitigationPlanLine}` : mitigationPlanLine;
+      
+      await onUpdateState("UPDATE_CUSTOMER", { 
+        uid: activeSuggestModalCustomer.uid, 
+        notes: updatedNotes 
+      });
+
+      if (showToast) {
+        showToast(`🎉 Mitigation strategy & email draft successfully synced to CRM for ${activeSuggestModalCustomer.name}!`, "success");
+      } else {
+        alert("🎉 Mitigation strategy & email draft successfully written into CRM notes!");
+      }
+      setActiveSuggestModalCustomer(null);
+    } catch (err) {
+      console.error(err);
+      if (showToast) {
+        showToast("Failed to write mitigation plan to database. Check workspace connection.", "error");
+      } else {
+        alert("Failed to commit updates to database.");
+      }
+    } finally {
+      setCrmSaving(false);
     }
   };
 
@@ -1692,6 +1744,149 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
         </div>
       </div>
     )}
+
+    {/* NEW SUGGEST FIX EMAIL OUTREACH CRM MODAL */}
+    <AnimatePresence>
+      {activeSuggestModalCustomer && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 min-h-screen overflow-y-auto font-sans" id="suggest-fix-modal-overlay">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 30 }}
+            transition={{ type: "spring", stiffness: 350, damping: 26 }}
+            className="bg-[#141416] border-2 border-[#C5A059] rounded-2xl max-w-4xl w-full p-6 shadow-2xl relative flex flex-col gap-5 text-left"
+          >
+            {/* Modal Close Corner */}
+            <button
+              onClick={() => setActiveSuggestModalCustomer(null)}
+              className="absolute top-5 right-5 text-[#71717A] hover:text-white transition-colors cursor-pointer p-1"
+              title="Close Sandbox"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-start gap-3.5 border-b border-[#27272A] pb-4">
+              <div className="p-3 rounded-xl bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/30">
+                <Brain className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[9px] font-mono tracking-widest text-[#C5A059] uppercase font-black px-2 py-0.5 rounded bg-[#C5A059]/10 border border-[#C5A059]/20">
+                  AI Mitigation Sandbox
+                </span>
+                <h3 className="text-xl font-bold text-white font-display tracking-tight mt-1">
+                  At-Risk Recovery Workflow for {activeSuggestModalCustomer.name}
+                </h3>
+                <p className="text-xs text-[#A1A1AA] font-sans">
+                  Pre-populate and refine client contact drafts based on high-risk factors & AI diagnostics.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Split Columns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+              {/* Left Column: AI Recommended Recovery Strategy */}
+              <div className="bg-[#0A0A0B]/80 rounded-xl p-4.5 border border-[#27272A] flex flex-col gap-3 min-h-[350px]">
+                <div className="flex items-center justify-between border-b border-[#27272A]/50 pb-2">
+                  <span className="text-[10px] font-bold font-mono text-[#C5A059] uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#C5A059]" /> Gemini Strategy Analysis
+                  </span>
+                  <span className="text-[9px] font-mono text-amber-400 bg-amber-950/25 border border-amber-900/30 px-2 py-0.2 rounded font-bold uppercase">
+                    Risk Assessment
+                  </span>
+                </div>
+
+                {suggestModalLoading ? (
+                  <div className="flex-1 flex flex-col items-center justify-center py-10 space-y-3.5">
+                    <div className="relative">
+                      <div className="w-10 h-10 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin"></div>
+                      <div className="absolute inset-2 w-6 h-6 border-2 border-[#C5A059]/30 border-b-transparent rounded-full animate-spin [animation-direction:reverse]"></div>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-mono text-xs text-[#C5A059] font-bold animate-pulse uppercase tracking-wider">Analyzing Churn Indicators...</p>
+                      <p className="text-[10px] text-[#71717A] mt-1 font-sans">Synthesizing targeted mitigation checklist & partner draft</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col gap-2">
+                    <p className="text-[10px] font-mono font-bold text-[#71717A] uppercase">Recommended Mitigation Tactics</p>
+                    <div className="flex-1 text-[11px] text-[#E4E4E7] leading-relaxed whitespace-pre-line overflow-y-auto max-h-[300px] font-mono bg-zinc-950/50 p-3 rounded-lg border border-[#27272A]/40 scrollbar-thin select-text">
+                      {suggestModalPlan}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Outreach Email Draft Preview & Modify */}
+              <div className="bg-[#0A0A0B]/80 rounded-xl p-4.5 border border-[#27272A] flex flex-col gap-3.5">
+                <div className="flex items-center justify-between border-b border-[#27272A]/50 pb-2">
+                  <span className="text-[10px] font-bold font-mono text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-zinc-400" /> Pre-Populated Customer Draft
+                  </span>
+                  <span className="text-[9px] font-mono text-zinc-400">
+                    {activeSuggestModalCustomer.email || "csm@enterprise.com"}
+                  </span>
+                </div>
+
+                {/* Subject field */}
+                <div className="space-y-1.5 flex flex-col">
+                  <label className="text-[9px] font-mono font-bold text-[#71717A] uppercase">Email Subject</label>
+                  <input
+                    type="text"
+                    value={suggestModalEmailSubject}
+                    onChange={(e) => setSuggestModalEmailSubject(e.target.value)}
+                    placeholder="Enter email subject line..."
+                    className="w-full bg-[#141416] border border-[#27272A] focus:border-[#C5A059]/60 rounded-lg p-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none font-sans font-medium transition-colors"
+                  />
+                </div>
+
+                {/* Body field */}
+                <div className="space-y-1.5 flex flex-col flex-1">
+                  <label className="text-[9px] font-mono font-bold text-[#71717A] uppercase">Email Draft Body</label>
+                  <textarea
+                    value={suggestModalEmailBody}
+                    onChange={(e) => setSuggestModalEmailBody(e.target.value)}
+                    placeholder="Generative email recovery draft output pops here once analyze triggers..."
+                    disabled={suggestModalLoading}
+                    className="w-full flex-1 bg-[#141416] border border-[#27272A] focus:border-[#C5A059]/60 rounded-lg p-3 text-xs text-[#E4E4E7] placeholder-zinc-600 focus:outline-none font-mono transition-colors whitespace-pre-wrap select-text resize-none line-clamp-10 min-h-[180px] md:min-h-[220px]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="flex items-center justify-end gap-3 border-t border-[#27272A] pt-4 mt-1">
+              <button
+                type="button"
+                onClick={() => setActiveSuggestModalCustomer(null)}
+                className="px-4.5 py-2.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:text-white text-zinc-300 font-bold font-mono uppercase tracking-wider text-[10px] rounded-xl transition-all cursor-pointer"
+              >
+                Abort Intervention
+              </button>
+              
+              <button
+                type="button"
+                disabled={crmSaving || suggestModalLoading}
+                onClick={handleSendToCrm}
+                className="px-5 py-2.5 bg-[#C5A059] hover:bg-[#C5A059]/90 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-[#0A0A0B] rounded-xl font-bold font-mono uppercase tracking-wider text-[10px] transition-all cursor-pointer flex items-center gap-2 shadow-lg hover:scale-[1.01] active:scale-[99]"
+              >
+                {crmSaving ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-[#0A0A0B] border-t-transparent rounded-full animate-spin"></div>
+                    <span>Writing to CRM Database...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Send to CRM notes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
     </div>
   );
 }

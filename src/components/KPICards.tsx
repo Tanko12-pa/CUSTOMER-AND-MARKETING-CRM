@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { DollarSign, ShieldAlert, Award, TrendingUp, Users, Radio, AlertTriangle, ShieldCheck, History, X, Bell, AlertCircle, ArrowRight } from "lucide-react";
 import { Customer, Campaign, SupportTicket, AuditLog } from "../types";
+import { motion, AnimatePresence } from "motion/react";
 
 interface KPICardsProps {
   customers: Customer[];
@@ -100,18 +101,22 @@ export function KPICards({ customers, campaigns, tickets, logs = [] }: KPICardsP
   return (
     <div className="space-y-6" id="kpi-cards-block-container">
       {/* Real-time floating toast notifications container */}
-      {activeAlerts.length > 0 && (
-        <div className="fixed top-24 right-6 z-50 max-w-sm w-full space-y-3 pointer-events-none" id="realtime-risk-toasts-overlay">
+      <div className="fixed top-24 right-6 z-50 max-w-sm w-full space-y-3 pointer-events-none" id="realtime-risk-toasts-overlay">
+        <AnimatePresence>
           {activeAlerts.slice(0, 3).map((alert) => (
-            <div
+            <motion.div
               key={alert.id}
-              className="pointer-events-auto bg-[#141416]/95 border-2 border-red-500/40 backdrop-blur-md rounded-2xl p-4 shadow-2xl flex items-start gap-3 animate-fade-in relative transition-all duration-300 hover:border-red-500/80"
+              initial={{ opacity: 0, y: 35, scale: 0.92, x: 20 }}
+              animate={{ opacity: 1, y: 0, scale: 1, x: 0 }}
+              exit={{ opacity: 0, x: 90, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="pointer-events-auto bg-[#141416]/95 border-2 border-red-500/40 backdrop-blur-md rounded-2xl p-4 shadow-2xl flex items-start gap-3 relative transition-all duration-300 hover:border-red-500/80"
             >
               <div className="p-2 rounded-xl bg-red-950/40 text-red-400 border border-red-900/30 shrink-0">
                 <Bell className="w-4 h-4 animate-swing" />
               </div>
               <div className="flex-1 space-y-1">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between font-sans">
                   <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest font-mono">Real-Time Risk Alert</span>
                   <button 
                     onClick={(e) => dismissAlert(alert.id, e)}
@@ -129,10 +134,10 @@ export function KPICards({ customers, campaigns, tickets, logs = [] }: KPICardsP
                   <span>{new Date(alert.timestamp).toLocaleTimeString()}</span>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
-      )}
+        </AnimatePresence>
+      </div>
 
       {/* Embedded Real-Time System Risk Alerts Console Header (Full Width banner if risk count exists) */}
       {riskTransitionAlerts.length > 0 && (
@@ -284,9 +289,22 @@ export function KPICards({ customers, campaigns, tickets, logs = [] }: KPICardsP
         </div>
 
         {/* CARD 4 */}
-        <div 
+        <motion.div 
+          animate={riskTransitionAlerts.length > 0 ? {
+            borderColor: ["rgb(39, 39, 42)", "rgb(239, 68, 68)", "rgb(39, 39, 42)"],
+            boxShadow: [
+              "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0px rgba(239, 68, 68, 0)",
+              "0 20px 30px -5px rgba(0, 0, 0, 0.25), 0 10px 15px -5px rgba(0, 0, 0, 0.1), 0 0 15px rgba(239, 68, 68, 0.35)",
+              "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0px rgba(239, 68, 68, 0)"
+            ]
+          } : {}}
+          transition={riskTransitionAlerts.length > 0 ? {
+            duration: 2.0,
+            repeat: Infinity,
+            ease: "easeInOut"
+          } : {}}
           className={`bg-[#141416] border border-[#27272A] border-b-4 rounded-2xl p-6 shadow-xl hover:translate-y-[-2px] transition-all duration-350 relative overflow-hidden group ${
-            riskTransitionAlerts.length > 0 ? 'border-red-650 ring-2 ring-red-500/20' : 'border-red-900'
+            riskTransitionAlerts.length > 0 ? 'border-red-500' : 'border-red-900'
           }`}
           id="kpi-card-atrisk"
         >
@@ -424,7 +442,7 @@ export function KPICards({ customers, campaigns, tickets, logs = [] }: KPICardsP
           </div>
 
           <p className="text-[10px] text-[#A1A1AA]/60 mt-2 font-mono">Negative CRM Sentiments</p>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

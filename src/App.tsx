@@ -21,7 +21,8 @@ import {
   CheckCircle,
   AlertTriangle,
   Info,
-  Trash2
+  Trash2,
+  CreditCard
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { KPICards } from "./components/KPICards";
@@ -33,9 +34,11 @@ import { SupportModule } from "./components/SupportModule";
 import { AudioTranscriber } from "./components/AudioTranscriber";
 import { DatabaseExplorer } from "./components/DatabaseExplorer";
 import { SubscriptionGate } from "./components/SubscriptionGate";
+import { SubscriptionPaywall } from "./components/SubscriptionPaywall";
 import { SystemAuditLogs } from "./components/SystemAuditLogs";
 import { MutationsAuditFeed } from "./components/MutationsAuditFeed";
 import { AgentHub } from "./components/AgentHub";
+import { BillingManagement } from "./components/BillingManagement";
 import { Customer, Campaign, SupportTicket, AuditLog } from "./types";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -158,7 +161,7 @@ const FALLBACK_AUDIT: AuditLog[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"agents" | "sales" | "marketing" | "support" | "audio" | "database" | "audit">("agents");
+  const [activeTab, setActiveTab] = useState<"agents" | "sales" | "marketing" | "support" | "audio" | "database" | "audit" | "billing">("agents");
   
   // Interactive D3 Pie Chart selected filter
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
@@ -403,6 +406,14 @@ export default function App() {
         plan: "none"
       }, { merge: true });
 
+      setCurrentUser((prev: any) => prev ? {
+        ...prev,
+        plan: "none",
+        active: false,
+        trialDaysLeft: 0,
+        subscriptionActive: false
+      } : null);
+
       // Clean local state and sync
       await syncStateData();
     } catch (e) {
@@ -423,6 +434,14 @@ export default function App() {
         hasActiveSubscription: false,
         plan: "trial"
       }, { merge: true });
+
+      setCurrentUser((prev: any) => prev ? {
+        ...prev,
+        plan: "trial",
+        active: true,
+        trialDaysLeft: 7,
+        subscriptionActive: false
+      } : null);
 
       // Sync state and finish
       await syncStateData();
@@ -474,10 +493,10 @@ export default function App() {
               name: data.name || firebaseUser.displayName || "Guest Operator",
               uid: firebaseUser.uid,
               trialStartDate: new Date().toISOString(),
-              plan: "standard",
-              active: true,
-              trialDaysLeft: 0,
-              subscriptionActive: true
+              plan: userPlan,
+              active: !isExpired || hasActiveSubscription,
+              trialDaysLeft: trialDaysLeft,
+              subscriptionActive: hasActiveSubscription
             });
           } else {
             // First time register doc sync fallback
@@ -637,6 +656,17 @@ export default function App() {
     );
   }
 
+  // Active or Expired telemetry check page trigger
+  const isTrialExpired = !currentUser.subscriptionActive && !currentUser.active;
+  if (isTrialExpired) {
+    return (
+      <SubscriptionPaywall
+        userEmail={currentUser.email}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#E4E4E7] flex flex-col font-sans" id="crm-app-root">
       
@@ -650,16 +680,36 @@ export default function App() {
             Active Operator: <strong className="text-white font-mono">{currentUser.email}</strong>
           </span>
           <span className="text-[#71717A] font-mono font-medium">|</span>
-          <span className="inline-flex items-center gap-1.5 text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 px-2 py-0.5 rounded-full font-bold font-mono text-[10px] uppercase">
-            ⭐ Standard Plan: Unlimited Workspace Enabled
+          <span className={`inline-flex items-center gap-1.5 border px-2 py-0.5 rounded-full font-bold font-mono text-[10px] uppercase ${
+            currentUser.subscriptionActive 
+              ? "text-emerald-400 bg-emerald-900/20 border-emerald-900/40" 
+              : currentUser.active 
+                ? "text-amber-400 bg-amber-955/20 border-amber-900/40" 
+                : "text-rose-400 bg-rose-955/20 border-rose-900/40"
+          }`}>
+            {currentUser.subscriptionActive ? `⭐ Plan: ${currentUser.plan || "Standard"}` : currentUser.active ? `⏳ Trial: ${Math.ceil(currentUser.trialDaysLeft || 7)} Days Left` : "⚠️ Account Expired"}
           </span>
         </div>
 
         {/* Sandbox Dev Console Simulator controls */}
         <div className="flex items-center space-x-2.5">
           <button
+            onClick={handleSimulateExpiration}
+            className="bg-red-950/20 hover:bg-red-955/40 text-red-500 hover:text-red-400 border border-red-900/40 px-2.5 py-1 rounded cursor-pointer text-[10px] font-mono transition-colors flex items-center gap-1"
+            title="Force-expire the remaining trial days to trigger the Stripe Checkout Paywall"
+          >
+            🔌 Simulate Expiration
+          </button>
+          <button
+            onClick={handleSimulateRestoreTrial}
+            className="bg-emerald-950/20 hover:bg-emerald-955/40 text-emerald-500 hover:text-emerald-400 border border-emerald-900/40 px-2.5 py-1 rounded cursor-pointer text-[10px] font-mono transition-colors flex items-center gap-1"
+            title="Restore a 7-day trial period to access the full operator CRM"
+          >
+            ⚡ Restore Trial
+          </button>
+          <button
             onClick={handleClearCacheAndCookies}
-            className="bg-amber-950/20 hover:bg-amber-950/40 text-amber-500 hover:text-amber-400 border border-amber-900/40 px-2.5 py-1 rounded cursor-pointer text-[10px] font-mono transition-colors flex items-center gap-1"
+            className="bg-amber-950/20 hover:bg-amber-955/40 text-amber-500 hover:text-amber-400 border border-amber-900/40 px-2.5 py-1 rounded cursor-pointer text-[10px] font-mono transition-colors flex items-center gap-1"
             title="Clean all caches, local storage, session storage and cookies from this app"
           >
             <Trash2 className="w-3 h-3" /> Clear Cache & Cookies
@@ -672,6 +722,26 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      {/* 7-DAY TRIAL COUNTDOWN BANNER */}
+      {currentUser && !currentUser.subscriptionActive && (currentUser.plan === "trial" || (currentUser.trialDaysLeft !== undefined && currentUser.trialDaysLeft > 0 && currentUser.trialDaysLeft <= 7)) && (
+        <div className="bg-[#1A130B]/90 border-b border-[#301F0D] text-xs px-6 py-2.5 flex items-center justify-between gap-3 text-amber-200/95 font-sans relative z-10 shadow-sm animate-fade-in" id="trial-alert-scroller-banner">
+          <div className="flex items-center space-x-2">
+            <span className="shrink-0 p-1 bg-amber-500/10 text-amber-400 rounded-md">
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+            </span>
+            <span>
+              ⭐ <strong>Evaluation Period Active:</strong> You have exactly <strong className="font-mono text-amber-300">{Math.floor(currentUser.trialDaysLeft)} Days, {Math.floor((currentUser.trialDaysLeft % 1) * 24)} Hours, {Math.floor(((currentUser.trialDaysLeft % 1) * 24 % 1) * 60)} Minutes</strong> left in your 7-day free trial dashboard space. Upgrade today for uninterrupted workspace service.
+            </span>
+          </div>
+          <button
+            onClick={() => setActiveTab("billing")}
+            className="bg-amber-500 hover:bg-amber-400 text-black px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono tracking-wider transition-colors cursor-pointer"
+          >
+            Upgrade License
+          </button>
+        </div>
+      )}
       
       {/* BRAND HEADER & EXECUTIVE METRICS BANNER */}
       <header className="bg-[#050505] text-[#E4E4E7] border-b border-[#27272A] py-5 px-6 relative" id="crm-luxury-header">
@@ -849,6 +919,14 @@ export default function App() {
                 <Terminal className="w-4 h-4 shrink-0" />
                 <span>System Audit Logs</span>
               </button>
+
+              <button
+                onClick={() => setActiveTab("billing")}
+                className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "billing" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#C5A059] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
+              >
+                <CreditCard className="w-4 h-4 shrink-0 text-[#C5A059]" />
+                <span>Manage Subscription</span>
+              </button>
             </div>
           </div>
 
@@ -991,6 +1069,7 @@ export default function App() {
                       customers={selectedStage ? customers.filter(c => c.lifecycleStage === selectedStage) : customers} 
                       onUpdateState={handleUpdateState} 
                       onTriggerIntelligence={handleTriggerIntelligence} 
+                      showToast={showToast}
                     />
                   </div>
                 )}
@@ -1034,6 +1113,15 @@ export default function App() {
                   <SystemAuditLogs 
                     logs={auditLogs}
                     onRefresh={syncStateData}
+                  />
+                )}
+
+                {activeTab === "billing" && (
+                  <BillingManagement
+                    currentUser={currentUser}
+                    setCurrentUser={setCurrentUser}
+                    showToast={showToast}
+                    onRefreshStates={syncStateData}
                   />
                 )}
               </motion.div>

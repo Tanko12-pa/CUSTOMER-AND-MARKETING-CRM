@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
+import billingRouter from "./src/routes/billing";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import Stripe from "stripe";
@@ -53,6 +54,8 @@ app.use((req, res, next) => {
     express.json()(req, res, next);
   }
 });
+
+app.use(billingRouter);
 
 // Use your specific Stripe Price IDs from your dashboard
 const PRICE_IDS = {
@@ -667,9 +670,7 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
 
       res.json({ success: true, url: session.url });
     } else {
-      // Elegant, immersive localized fallback. No Secret code is found, trigger standard beautiful simulated Stripe screen
-      const url = `/?simulated_stripe=true&plan=${plan}&email=${encodeURIComponent(cleanEmail)}`;
-      res.json({ success: true, url });
+      res.status(500).json({ error: "Stripe is not currently configured on this workspace. Please define STRIPE_SECRET_KEY in settings." });
     }
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2034,7 +2035,34 @@ app.post("/api/gmail/send", (req, res) => {
   res.json({ success: true, logs: mockAuditLogs });
 });
 
-/*
+// Cancel active premium tier subscription
+app.post("/api/billing/cancel-subscription", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Missing user email parameter." });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === cleanEmail);
+    if (userIndex !== -1) {
+      mockUsersList[userIndex].plan = "none";
+      mockUsersList[userIndex].subscriptionActive = false;
+      if (currentUserSession?.email.toLowerCase() === cleanEmail) {
+        currentUserSession = mockUsersList[userIndex];
+      }
+      addAudit("SUBSCRIPTION_CANCELED", "users", `User cancelled active premium tier subscription: ${cleanEmail}`);
+      if (db) {
+        await setDoc(doc(db, "users", cleanEmail), { plan: "none", hasActiveSubscription: false }, { merge: true });
+      }
+      res.json({ success: true, user: mockUsersList[userIndex] });
+    } else {
+      res.status(404).json({ success: false, error: "User profile not found in database." });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // --- 1. STRIPE CHECKOUT SESSION CREATION ---
 app.post('/api/checkout/create-session', async (req, res) => {
   const { plan, userId } = req.body; // 'monthly' or 'yearly'
@@ -2046,10 +2074,8 @@ app.post('/api/checkout/create-session', async (req, res) => {
   const stripe = getStripeClient();
   const cleanEmail = userId.trim().toLowerCase();
 
-  // If Stripe key is missing, fall back to simulated checkout session flow gracefully
   if (!stripe) {
-    const url = `/?simulated_stripe=true&plan=${plan}&email=${encodeURIComponent(cleanEmail)}`;
-    return res.json({ url });
+    return res.status(400).json({ error: "Stripe integration is not configured. Please define STRIPE_SECRET_KEY in settings." });
   }
 
   try {
@@ -2074,8 +2100,8 @@ app.post('/api/checkout/create-session', async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${req.headers.origin || process.env.FRONTEND_URL || "http://localhost:3000"}/?stripe_success=true&plan=${plan}&email=${encodeURIComponent(cleanEmail)}`,
-      cancel_url: `${req.headers.origin || process.env.FRONTEND_URL || "http://localhost:3000"}/?stripe_cancel=true`,
+      success_url: `${req.headers.origin || "http://localhost:3000"}/?stripe_success=true&plan=${plan}&email=${encodeURIComponent(cleanEmail)}`,
+      cancel_url: `${req.headers.origin || "http://localhost:3000"}/?stripe_cancel=true`,
       client_reference_id: cleanEmail,
       customer_email: cleanEmail,
     });
@@ -2118,7 +2144,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     if (userId) {
       const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === userId.toLowerCase());
       if (userIndex !== -1) {
-        mockUsersList[userIndex].plan = "monthly"; // Upgrade the user to paying plan
+        mockUsersList[userIndex].plan = session.metadata?.plan || "monthly"; // Upgrade the user to paying plan
         mockUsersList[userIndex].subscriptionActive = true;
         mockUsersList[userIndex].subscriptionStartDate = new Date().toISOString();
         if (currentUserSession?.email.toLowerCase() === userId.toLowerCase()) {
@@ -2132,7 +2158,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
   res.json({ received: true });
 });
-*/
 
 // Lookup function checking status of logged-in trial or subscribed users in mock CRM database
 async function checkUserSubscriptionStatus(userId: string): Promise<boolean> {
