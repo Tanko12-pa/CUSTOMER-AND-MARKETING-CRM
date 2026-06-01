@@ -435,9 +435,29 @@ let mockAuditLogs = [
   }
 ];
 
+// Helper function to recursively strip undefined properties so Firestore writes never fail
+function cleanUndefined(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(cleanUndefined);
+  }
+  if (typeof obj === "object") {
+    const cleaned: any = {};
+    for (const key in obj) {
+      const val = obj[key];
+      if (val !== undefined) {
+        cleaned[key] = cleanUndefined(val);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 // Helper to record audit logs
 function addAudit(action: string, collection: string, details: string, user: string = "akindewum@gmail.com", statusStr: "Success" | "Failed" = "Success", changedFields?: Record<string, { old: any; new: any }>) {
-  const newLog = {
+  const newLog = cleanUndefined({
     id: `log_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     timestamp: new Date().toISOString(),
     action,
@@ -446,7 +466,7 @@ function addAudit(action: string, collection: string, details: string, user: str
     status: statusStr,
     details,
     changedFields
-  };
+  });
   mockAuditLogs.unshift(newLog);
   if (db) {
     setDoc(doc(db, "audit_logs", newLog.id), newLog).catch(err => {

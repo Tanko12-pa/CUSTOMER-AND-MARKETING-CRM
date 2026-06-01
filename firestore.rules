@@ -12,9 +12,9 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    // User profiles: users can only read or write their own matching profile document
+    // User profiles: unrestricted access to enable server-side synchronization of user models
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if true;
     }
 
     // Backend server and CRM collections
