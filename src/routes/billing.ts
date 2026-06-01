@@ -35,6 +35,55 @@ router.post("/api/auth/signup", async (req, res) => {
   return res.status(201).json({ message: "User registered successfully!", user: newUser });
 });
 
+// Seed user for testing
+const initialTrialEnds = new Date();
+initialTrialEnds.setDate(initialTrialEnds.getDate() + 7);
+usersDb.set("akindewum@gmail.com", {
+  id: "seed_trial_1",
+  name: "Akindewum",
+  email: "akindewum@gmail.com",
+  password: "admin_password_999",
+  trialEndsAt: initialTrialEnds.toISOString(),
+  subscriptionStatus: "trialing",
+  stripeCustomerId: null
+});
+
+// Sign-in handler
+router.post("/api/auth/signin", async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const user = usersDb.get(cleanEmail);
+
+  // 1. First, strictly verify if the user exists
+  if (!user) {
+    return res.status(401).json({ error: "Incorrect email or password. Please try again or reset your password." });
+  }
+
+  // 2. Verify password integrity (direct match since it is testing and is stored in usersDb)
+  const isPasswordValid = password === user.password;
+  if (!isPasswordValid) {
+    return res.status(401).json({ error: "Incorrect email or password. Please try again or reset your password." });
+  }
+
+  // 3. DO NOT block login if the trial is expired or subscription is missing! 
+  // Pass the data to the frontend so the Paywall component can handle the redirection cleanly.
+  return res.status(200).json({
+    message: "Authenticated successfully",
+    user: {
+      name: user.name,
+      email: user.email,
+      trialEndsAt: user.trialEndsAt, // Ensure this field is always sent back
+      subscriptionStatus: user.subscriptionStatus || "trialing" 
+    }
+  });
+});
+
+
 // Stripe Checkout Session Creation Route
 router.post("/api/billing/create-checkout", async (req, res) => {
   const { email, priceType } = req.body; // priceType: 'monthly' or 'yearly'
