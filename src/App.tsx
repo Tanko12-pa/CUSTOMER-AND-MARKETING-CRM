@@ -564,7 +564,7 @@ export default function App() {
     });
 
     if (response.status === 403) {
-      alert("You need an active subscription to perform this action.");
+      showToast("You need an active subscription to perform this action.", "error");
       return;
     }
 
@@ -1007,6 +1007,7 @@ export default function App() {
                     tickets={tickets} 
                     customers={customers}
                     onUpdateState={handleUpdateState} 
+                    showToast={showToast}
                   />
                 )}
 
@@ -1014,6 +1015,7 @@ export default function App() {
                   <AudioTranscriber 
                     onUpdateState={handleUpdateState} 
                     customers={customers} 
+                    showToast={showToast}
                   />
                 )}
 

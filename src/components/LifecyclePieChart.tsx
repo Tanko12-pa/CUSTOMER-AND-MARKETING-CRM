@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Customer, LifecycleStage } from "../types";
 import { PieChart, Zap, Percent, Download } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 
 interface LifecyclePieChartProps {
   customers: Customer[];
@@ -97,189 +98,38 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
     }
   };
 
-  // 1. Render Pie Chart
-  useEffect(() => {
-    if (!svgRef.current) return;
+  const width = 240;
+  const height = 240;
+  const radius = Math.min(width, height) / 2 - 15;
 
-    const width = 240;
-    const height = 240;
-    const radius = Math.min(width, height) / 2 - 15;
-
-    // Clear previous SVG contents
-    const svgElement = d3.select(svgRef.current);
-    svgElement.selectAll("*").remove();
-
-    // Create container group centralized
-    const g = svgElement
-      .attr("width", "100%")
-      .attr("height", "100%")
-      .attr("viewBox", `0 0 ${width} ${height}`)
-      .append("g")
-      .attr("transform", `translate(${width / 2}, ${height / 2})`);
-
-    // Setup pie and arc generators
-    const pie = d3
+  const pieGenerator = useMemo(() => {
+    return d3
       .pie<any>()
       .value((d) => d.count)
       .sort(null); // Keep logical pipeline order
+  }, []);
 
-    const arc = d3
+  const arcGenerator = useMemo(() => {
+    return d3
       .arc<any>()
       .innerRadius(radius * 0.55) // Donut chart look!
       .outerRadius(radius)
       .cornerRadius(6)
       .padAngle(0.04);
+  }, [radius]);
 
-    const arcHover = d3
+  const arcHoverGenerator = useMemo(() => {
+    return d3
       .arc<any>()
       .innerRadius(radius * 0.5)
       .outerRadius(radius + 8)
       .cornerRadius(8)
       .padAngle(0.02);
+  }, [radius]);
 
-    const pathData = pie(stageData);
-
-    // Draw the slices
-    const path = g
-      .selectAll("path")
-      .data(pathData)
-      .enter()
-      .append("path")
-      .attr("class", "pie-slice")
-      .attr("d", arc as any)
-      .attr("fill", (d) => colors[d.data.stage as LifecycleStage])
-      .attr("stroke", "#141416")
-      .attr("stroke-width", "3px")
-      .style("cursor", "pointer")
-      .style("filter", "drop-shadow(0px 4px 10px rgba(0, 0, 0, 0.455))")
-      .each(function (d) {
-        (this as any)._current = d;
-      });
-
-    // Add rich entry transition utilizing d3.interpolate for a beautiful sweep-out layout animation
-    path
-      .transition()
-      .duration(1100)
-      .ease(d3.easeExpOut)
-      .attrTween("d", function (d) {
-        const interpolate = d3.interpolate({ startAngle: d.startAngle, endAngle: d.startAngle }, d);
-        return function (t) {
-          return arc(interpolate(t) as any) as string;
-        };
-      });
-
-    // Interactive mouse outcomes (scaling the slice & tracking cursor coordinates)
-    path
-      .on("mouseover", function (event, d) {
-        d3.select(this)
-          .transition()
-          .duration(200)
-          .attr("d", arcHover as any)
-          .attr("opacity", 1.0);
-
-        setHoveredData({
-          stage: d.data.stage,
-          count: d.data.count,
-          percent: d.data.percent,
-        });
-
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          setTooltipPos({
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-          });
-        }
-      })
-      .on("mousemove", function (event) {
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          setTooltipPos({
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-          });
-        }
-      })
-      .on("mouseleave", function (event, d) {
-        const isSelected = selectedStage === d.data.stage;
-        d3.select(this)
-          .transition()
-          .duration(250)
-          .attr("d", isSelected ? (arcHover as any) : (arc as any))
-          .attr("opacity", selectedStage && !isSelected ? 0.4 : 1.0);
-
-        setHoveredData(null);
-        setTooltipPos(null);
-      })
-      .on("click", function (event, d) {
-        const stage = d.data.stage as LifecycleStage;
-        if (onSelectStage) {
-          if (selectedStage === stage) {
-            onSelectStage(null); // Toggle off
-          } else {
-            onSelectStage(stage); // Select
-          }
-        }
-      });
-
-    // Handle interactive opacity state if filter is applied
-    path.attr("opacity", (d) => {
-      if (!selectedStage) return 1.0;
-      return d.data.stage === selectedStage ? 1.0 : 0.4;
-    });
-
-    // Expand selected stage if there is one
-    path.each(function (d) {
-      if (selectedStage && d.data.stage === selectedStage) {
-        d3.select(this)
-          .transition()
-          .duration(300)
-          .attr("d", arcHover as any);
-      }
-    });
-
-  }, [customers, selectedStage, stageData]);
-
-  // 1b. Fast path selector hover transitions for legend sync
-  useEffect(() => {
-    if (!svgRef.current) return;
-    const svgElement = d3.select(svgRef.current);
-    
-    const width = 240;
-    const height = 240;
-    const radius = Math.min(width, height) / 2 - 15;
-    
-    const arc = d3
-      .arc<any>()
-      .innerRadius(radius * 0.55)
-      .outerRadius(radius)
-      .cornerRadius(6)
-      .padAngle(0.04);
-
-    const arcHover = d3
-      .arc<any>()
-      .innerRadius(radius * 0.5)
-      .outerRadius(radius + 8)
-      .cornerRadius(8)
-      .padAngle(0.02);
-
-    svgElement.selectAll(".pie-slice").each(function(d: any) {
-      if (!d) return;
-      const isHovered = hoveredData && hoveredData.stage === d.data.stage;
-      const isSelected = selectedStage === d.data.stage;
-      
-      d3.select(this)
-        .transition()
-        .duration(220)
-        .ease(d3.easeCubicOut)
-        .attr("d", (isHovered || isSelected) ? (arcHover as any) : (arc as any))
-        .attr("opacity", () => {
-          if (isHovered || isSelected) return 1.0;
-          if (selectedStage || hoveredData) return 0.4;
-          return 1.0;
-        });
-    });
-  }, [hoveredData, selectedStage]);
+  const pieSlices = useMemo(() => {
+    return pieGenerator(stageData);
+  }, [stageData, pieGenerator]);
 
   // 2. Compute Pipeline Velocity Average Transition Days
   const velocityData = useMemo(() => {
@@ -482,7 +332,87 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
             ref={svgRef} 
             className="w-full max-w-[190px] drop-shadow-2xl"
             style={{ overflow: "visible" }}
-          ></svg>
+            viewBox={`0 0 ${width} ${height}`}
+            width="100%"
+            height="100%"
+          >
+            <g transform={`translate(${width / 2}, ${height / 2})`}>
+              {pieSlices.map((d) => {
+                const isSelected = selectedStage === d.data.stage;
+                const isHovered = hoveredData && hoveredData.stage === d.data.stage;
+                
+                const pathD = (isHovered || isSelected) ? arcHoverGenerator(d as any) : arcGenerator(d as any);
+                const color = colors[d.data.stage as LifecycleStage];
+
+                // Setup opacity transitions
+                let opacity = 1.0;
+                if (selectedStage || hoveredData) {
+                  opacity = (isHovered || isSelected) ? 1.0 : 0.4;
+                }
+
+                return (
+                  <motion.path
+                    key={d.data.stage}
+                    layoutId={`pie-slice-${d.data.stage}`}
+                    d={pathD || ""}
+                    fill={color}
+                    stroke="#141416"
+                    strokeWidth="3px"
+                    style={{
+                      cursor: "pointer",
+                      filter: "drop-shadow(0px 4px 10px rgba(0, 0, 0, 0.455))",
+                    }}
+                    animate={{
+                      d: pathD || "",
+                      opacity: opacity,
+                    }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 110,
+                      damping: 15,
+                    }}
+                    onClick={() => {
+                      const stage = d.data.stage as LifecycleStage;
+                      if (onSelectStage) {
+                        if (selectedStage === stage) {
+                          onSelectStage(null);
+                        } else {
+                          onSelectStage(stage);
+                        }
+                      }
+                    }}
+                    onMouseEnter={(event) => {
+                      setHoveredData({
+                        stage: d.data.stage,
+                        count: d.data.count,
+                        percent: d.data.percent,
+                      });
+                      if (containerRef.current) {
+                        const rect = containerRef.current.getBoundingClientRect();
+                        setTooltipPos({
+                          x: event.clientX - rect.left,
+                          y: event.clientY - rect.top,
+                        });
+                      }
+                    }}
+                    onMouseMove={(event) => {
+                      if (containerRef.current) {
+                        const rect = containerRef.current.getBoundingClientRect();
+                        setTooltipPos({
+                          x: event.clientX - rect.left,
+                          y: event.clientY - rect.top,
+                        });
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredData(null);
+                      setTooltipPos(null);
+                    }}
+                  />
+                );
+              })}
+            </g>
+          </svg>
           
           {/* Donut Center Display */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">

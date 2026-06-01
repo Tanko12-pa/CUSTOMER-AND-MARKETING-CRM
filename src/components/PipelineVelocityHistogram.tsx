@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import * as d3 from "d3";
+import { motion, AnimatePresence } from "motion/react";
 import { Customer, LifecycleStage } from "../types";
 import { Clock, HelpCircle, BarChart3, TrendingUp, Info } from "lucide-react";
 
@@ -9,7 +10,6 @@ interface PipelineVelocityHistogramProps {
 
 export function PipelineVelocityHistogram({ customers }: PipelineVelocityHistogramProps) {
   const [selectedStage, setSelectedStage] = useState<LifecycleStage>("Lead");
-  const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredBin, setHoveredBin] = useState<{ x0: number; x1: number; count: number; accounts: string[] } | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
@@ -73,46 +73,41 @@ export function PipelineVelocityHistogram({ customers }: PipelineVelocityHistogr
     return { avg, min, max, total: days.length };
   }, [durationsData]);
 
-  // Re-draw histogram when durationsData changes or window resizes
-  useEffect(() => {
-    if (!svgRef.current || durationsData.length === 0) return;
+  // Dimension Specs
+  const margin = { top: 25, right: 25, bottom: 40, left: 45 };
+  const width = 500;
+  const height = 210;
+  const chartWidth = width - margin.left - margin.right; // 430
+  const chartHeight = height - margin.top - margin.bottom; // 145
 
-    const margin = { top: 25, right: 25, bottom: 40, left: 45 };
-    const width = 500;
-    const height = 210;
-    const chartWidth = width - margin.left - margin.right;
-    const chartHeight = height - margin.top - margin.bottom;
+  const daysVals = useMemo(() => durationsData.map((d) => d.days), [durationsData]);
+  const maxVal = useMemo(() => (d3.max(daysVals) as any) || 10, [daysVals]);
 
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
-
-    const g = svg
-      .attr("width", "100%")
-      .attr("height", "155px")
-      .attr("viewBox", `0 0 ${width} ${height}`)
-      .append("g")
-      .attr("transform", `translate(${margin.left}, ${margin.top})`);
-
-    const daysVals = durationsData.map((d) => d.days);
-    const maxVal = (d3.max(daysVals) as any) || 10;
-
-    // Set up X axis scale
-    const xScale = d3
+  // Set up X Scale
+  const xScale = useMemo(() => {
+    return d3
       .scaleLinear()
       .domain([0, maxVal * 1.05])
       .range([0, chartWidth]);
+  }, [maxVal, chartWidth]);
 
-    // Setup bin generator
-    const binCount = Math.min(8, Math.max(3, Math.round(durationsData.length / 1.5)));
+  // Setup bin count
+  const binCount = useMemo(() => {
+    return Math.min(8, Math.max(3, Math.round(durationsData.length / 1.5)));
+  }, [durationsData.length]);
+
+  // Compute Bins
+  const bins = useMemo(() => {
     const histogram = d3
       .bin()
       .domain(xScale.domain() as [number, number])
       .thresholds(xScale.ticks(binCount));
+    return histogram(daysVals);
+  }, [xScale, daysVals, binCount]);
 
-    const bins = histogram(daysVals);
-
-    // Map customers of each bin for accurate tooltip reporting
-    const interactiveBins = bins.map((bin) => {
+  // Map Interactive Bins
+  const interactiveBins = useMemo(() => {
+    return bins.map((bin) => {
       const b0 = bin.x0 ?? 0;
       const b1 = bin.x1 ?? 0;
       const binCustomers = durationsData
@@ -122,210 +117,23 @@ export function PipelineVelocityHistogram({ customers }: PipelineVelocityHistogr
       return {
         x0: b0,
         x1: b1,
-        count: bin.length,
+        count: (bin as any).length,
         accounts: binCustomers,
       };
     });
+  }, [bins, durationsData]);
 
-    // Set up Y axis scale
-    const maxCount = d3.max(bins, (d) => d.length) || 1;
-    const yScale = d3
+  // Set up Y Scale
+  const maxCount = useMemo(() => d3.max(bins, (d) => (d as any).length) || 1, [bins]);
+  const yScale = useMemo(() => {
+    return d3
       .scaleLinear()
       .domain([0, maxCount + 0.5])
       .range([chartHeight, 0]);
+  }, [maxCount, chartHeight]);
 
-    // Color gradient setup
-    const stageColor = stageColors[selectedStage];
-    const gradId = `hist-grad-${selectedStage}`;
-    
-    // Add linear gradient
-    const defs = svg.append("defs");
-    const linearGradient = defs
-      .append("linearGradient")
-      .attr("id", gradId)
-      .attr("x1", "0%")
-      .attr("y1", "0%")
-      .attr("x2", "0%")
-      .attr("y2", "100%");
-
-    linearGradient
-      .append("stop")
-      .attr("offset", "0%")
-      .attr("stop-color", stageColor)
-      .attr("stop-opacity", 0.9);
-
-    linearGradient
-      .append("stop")
-      .attr("offset", "100%")
-      .attr("stop-color", stageColor)
-      .attr("stop-opacity", 0.35);
-
-    // Grid lines for frequency helper
-    g.append("g")
-      .attr("class", "grid")
-      .call(
-        d3.axisLeft(yScale)
-          .ticks(Math.min(5, maxCount))
-          .tickSize(-chartWidth)
-          .tickFormat(() => "")
-      )
-      .selectAll(".tick line")
-      .attr("stroke", "#27272A")
-      .attr("stroke-width", "1px")
-      .attr("stroke-dasharray", "3,3");
-
-    // X Axis lines and formatting
-    const xAxis = d3.axisBottom(xScale).ticks(6).tickFormat((d) => `${d}d`);
-    const xAxisG = g
-      .append("g")
-      .attr("transform", `translate(0, ${chartHeight})`)
-      .call(xAxis);
-
-    xAxisG.selectAll(".tick text")
-      .attr("fill", "#71717A")
-      .attr("font-size", "10px")
-      .attr("font-family", "JetBrains Mono, monospace")
-      .attr("dy", "10px");
-    xAxisG.select(".domain").attr("stroke", "#27272A");
-    xAxisG.selectAll(".tick line").attr("stroke", "#27272A");
-
-    // Y Axis frequency lines
-    const yAxis = d3.axisLeft(yScale).ticks(Math.min(5, maxCount)).tickFormat(d3.format("d"));
-    const yAxisG = g.append("g").call(yAxis);
-
-    yAxisG.selectAll(".tick text")
-      .attr("fill", "#71717A")
-      .attr("font-size", "10px")
-      .attr("font-family", "JetBrains Mono, monospace")
-      .attr("dx", "-6px");
-    yAxisG.select(".domain").attr("stroke", "#27272A");
-    yAxisG.selectAll(".tick line").attr("stroke", "#27272A");
-
-    // Bars Group
-    const barGroups = g
-      .selectAll(".bar")
-      .data(interactiveBins)
-      .enter()
-      .append("g")
-      .attr("class", "bar-group");
-
-    // Draw background placeholder bars
-    barGroups
-      .append("rect")
-      .attr("x", (d) => xScale(d.x0) + 1.5)
-      .attr("y", 0)
-      .attr("width", (d) => Math.max(0, xScale(d.x1) - xScale(d.x0) - 3))
-      .attr("height", chartHeight)
-      .attr("fill", "#27272A")
-      .attr("opacity", 0.03)
-      .attr("rx", 3);
-
-    // Draw active frequency bars
-    const barRects = barGroups
-      .append("rect")
-      .attr("x", (d) => xScale(d.x0) + 1.5)
-      .attr("y", chartHeight) // Animation start
-      .attr("width", (d) => Math.max(1, xScale(d.x1) - xScale(d.x0) - 3))
-      .attr("height", 0)
-      .attr("fill", `url(#${gradId})`)
-      .attr("stroke", stageColor)
-      .attr("stroke-width", "1px")
-      .attr("opacity", 0.85)
-      .attr("rx", 4)
-      .style("cursor", "pointer")
-      .style("filter", `drop-shadow(0 0 4px ${stageColor}15)`);
-
-    // Entrance Animation utilizing transition
-    barRects
-      .transition()
-      .duration(750)
-      .delay((d, i) => i * 65)
-      .attr("y", (d) => yScale(d.count))
-      .attr("height", (d) => chartHeight - yScale(d.count));
-
-    // Interactive mouse trackers
-    barRects
-      .on("mouseover", function (event, d) {
-        d3.select(this)
-          .transition()
-          .duration(150)
-          .attr("opacity", 1.0)
-          .attr("stroke-width", "2px")
-          .style("filter", `drop-shadow(0 0 8px ${stageColor}40)`);
-
-        setHoveredBin({
-          x0: d.x0,
-          x1: d.x1,
-          count: d.count,
-          accounts: d.accounts,
-        });
-
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          setTooltipPos({
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-          });
-        }
-      })
-      .on("mousemove", function (event) {
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          setTooltipPos({
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-          });
-        }
-      })
-      .on("mouseleave", function () {
-        d3.select(this)
-          .transition()
-          .duration(200)
-          .attr("opacity", 0.85)
-          .attr("stroke-width", "1px")
-          .style("filter", `drop-shadow(0 0 4px ${stageColor}15)`);
-
-        setHoveredBin(null);
-        setTooltipPos(null);
-      });
-
-    // Average line indicator
-    if (stats.avg > 0) {
-      const avgX = xScale(stats.avg);
-
-      // Draw dashed average indicators
-      g.append("line")
-        .attr("x1", avgX)
-        .attr("x2", avgX)
-        .attr("y1", -5)
-        .attr("y2", chartHeight)
-        .attr("stroke", "#C5A059")
-        .attr("stroke-width", "1.5px")
-        .attr("stroke-dasharray", "4,4")
-        .style("filter", "drop-shadow(0 0 4px rgba(197, 160, 89, 0.45))")
-        .attr("opacity", 0)
-        .transition()
-        .duration(800)
-        .delay(400)
-        .attr("opacity", 0.95);
-
-      // Label average indicator
-      g.append("text")
-        .attr("x", avgX + 6)
-        .attr("y", 12)
-        .attr("fill", "#C5A059")
-        .attr("font-size", "9px")
-        .attr("font-family", "JetBrains Mono, monospace")
-        .attr("font-weight", "bold")
-        .text(`AVG: ${stats.avg.toFixed(1)}d`)
-        .attr("opacity", 0)
-        .transition()
-        .duration(800)
-        .delay(500)
-        .style("opacity", 1);
-    }
-
-  }, [durationsData, selectedStage, stats]);
+  const yTicks = useMemo(() => yScale.ticks(Math.min(5, maxCount)), [yScale, maxCount]);
+  const xTicks = useMemo(() => xScale.ticks(6), [xScale]);
 
   return (
     <div
@@ -395,7 +203,203 @@ export function PipelineVelocityHistogram({ customers }: PipelineVelocityHistogr
             {stageLabels[selectedStage]}
           </div>
           <div className="bg-[#0A0A0B]/30 border border-[#27272A]/50 rounded-xl p-3 flex items-center justify-center">
-            <svg ref={svgRef} className="width-full overflow-visible" style={{ minHeight: "155px" }}></svg>
+            <svg 
+              className="w-full overflow-visible" 
+              style={{ minHeight: "155px" }}
+              viewBox={`0 0 ${width} ${height}`}
+              width="100%"
+              height="155px"
+            >
+              <defs>
+                <linearGradient id={`hist-grad-${selectedStage}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor={stageColors[selectedStage]} stopOpacity={0.9} />
+                  <stop offset="100%" stopColor={stageColors[selectedStage]} stopOpacity={0.35} />
+                </linearGradient>
+              </defs>
+
+              <g transform={`translate(${margin.left}, ${margin.top})`}>
+                {/* Horizontal reference gridlines */}
+                {yTicks.map((tick, i) => {
+                  const yVal = yScale(tick);
+                  return (
+                     <line
+                       key={`grid-${i}`}
+                       x1={0}
+                       x2={chartWidth}
+                       y1={yVal}
+                       y2={yVal}
+                       stroke="#27272A"
+                       strokeWidth="1px"
+                       strokeDasharray="3,3"
+                     />
+                  );
+                })}
+
+                {/* X Axis ticks */}
+                {xTicks.map((tick, i) => {
+                  const xVal = xScale(tick);
+                  return (
+                    <g key={`x-tick-${i}`} transform={`translate(${xVal}, ${chartHeight})`}>
+                      <line y2={6} stroke="#27272A" />
+                      <text
+                        dy="15px"
+                        fill="#71717A"
+                        fontSize="10px"
+                        fontFamily="JetBrains Mono, monospace"
+                        textAnchor="middle"
+                      >
+                        {tick}d
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* Y Axis ticks */}
+                {yTicks.map((tick, i) => {
+                  const yVal = yScale(tick);
+                  return (
+                    <g key={`y-tick-${i}`} transform={`translate(0, ${yVal})`}>
+                      <line x2={-6} stroke="#27272A" />
+                      <text
+                        dx="-10px"
+                        dy="4px"
+                        fill="#71717A"
+                        fontSize="10px"
+                        fontFamily="JetBrains Mono, monospace"
+                        textAnchor="end"
+                      >
+                        {tick}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* Axis domain lines */}
+                <line x1={0} x2={chartWidth} y1={chartHeight} y2={chartHeight} stroke="#27272A" />
+                <line x1={0} x2={0} y1={0} y2={chartHeight} stroke="#27272A" />
+
+                {/* Interactive bins rendering */}
+                <AnimatePresence>
+                  {interactiveBins.map((bin, i) => {
+                    const xVal = xScale(bin.x0) + 1.5;
+                    const bWidth = Math.max(1, xScale(bin.x1) - xScale(bin.x0) - 3);
+                    const yVal = yScale(bin.count);
+                    const bHeight = chartHeight - yVal;
+
+                    return (
+                      <g key={`bin-group-${i}`}>
+                        {/* Background guide rect */}
+                        <motion.rect
+                          layout
+                          x={xVal}
+                          y={0}
+                          width={bWidth}
+                          height={chartHeight}
+                          fill="#27272A"
+                          opacity={0.03}
+                          rx={3}
+                          transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                        />
+
+                        {/* Active value frequency bar with layout animations */}
+                        <motion.rect
+                          layout
+                          initial={{ height: 0, y: chartHeight }}
+                          animate={{
+                            y: yVal,
+                            height: Math.max(0, bHeight),
+                          }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 110,
+                            damping: 15,
+                            mass: 0.9,
+                          }}
+                          x={xVal}
+                          width={bWidth}
+                          fill={`url(#hist-grad-${selectedStage})`}
+                          stroke={stageColors[selectedStage]}
+                          strokeWidth="1px"
+                          opacity={0.85}
+                          rx={4}
+                          className="cursor-pointer"
+                          style={{
+                            filter: `drop-shadow(0 0 4px ${stageColors[selectedStage]}15)`
+                          }}
+                          onMouseOver={(event) => {
+                            setHoveredBin({
+                              x0: bin.x0,
+                              x1: bin.x1,
+                              count: bin.count,
+                              accounts: bin.accounts,
+                            });
+                            if (containerRef.current) {
+                              const rect = containerRef.current.getBoundingClientRect();
+                              setTooltipPos({
+                                x: event.clientX - rect.left,
+                                y: event.clientY - rect.top,
+                              });
+                            }
+                          }}
+                          onMouseMove={(event) => {
+                            if (containerRef.current) {
+                              const rect = containerRef.current.getBoundingClientRect();
+                              setTooltipPos({
+                                x: event.clientX - rect.left,
+                                y: event.clientY - rect.top,
+                              });
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            setHoveredBin(null);
+                            setTooltipPos(null);
+                          }}
+                          whileHover={{
+                            opacity: 1.0,
+                            strokeWidth: "2px",
+                            filter: `drop-shadow(0 0 8px ${stageColors[selectedStage]}40)`
+                          }}
+                        />
+                      </g>
+                    );
+                  })}
+                </AnimatePresence>
+
+                {/* Average line indicator with layout and delay */}
+                {stats.avg > 0 && (
+                  <g>
+                    <motion.line
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.95 }}
+                      transition={{ delay: 0.4 }}
+                      x1={xScale(stats.avg)}
+                      x2={xScale(stats.avg)}
+                      y1={-5}
+                      y2={chartHeight}
+                      stroke="#C5A059"
+                      strokeWidth="1.5px"
+                      strokeDasharray="4,4"
+                      style={{ filter: "drop-shadow(0 0 4px rgba(197, 160, 89, 0.45))" }}
+                    />
+                    <motion.text
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.5 }}
+                      x={xScale(stats.avg) + 6}
+                      y={12}
+                      fill="#C5A059"
+                      fontSize="9px"
+                      fontFamily="JetBrains Mono, monospace"
+                      fontWeight="bold"
+                    >
+                      AVG: {stats.avg.toFixed(1)}d
+                    </motion.text>
+                  </g>
+                )}
+              </g>
+            </svg>
           </div>
         </div>
       )}

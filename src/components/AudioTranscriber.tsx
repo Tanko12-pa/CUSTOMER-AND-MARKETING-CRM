@@ -4,6 +4,7 @@ import { Sparkles, Mic, Headphones, Volume2, Globe, FileText, Check } from "luci
 interface AudioTranscriberProps {
   onUpdateState: (type: string, payload: any) => Promise<void>;
   customers: Array<{ uid: string; name: string }>;
+  showToast?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
 const SAMPLE_VOICE_PRESETS = [
@@ -29,7 +30,7 @@ const SAMPLE_VOICE_PRESETS = [
   }
 ];
 
-export function AudioTranscriber({ onUpdateState, customers }: AudioTranscriberProps) {
+export function AudioTranscriber({ onUpdateState, customers, showToast }: AudioTranscriberProps) {
   const [selectedLanguage, setSelectedLanguage] = useState("Spanish");
   const [speakerName, setSpeakerName] = useState("Genevieve Thorne");
   const [customPrompt, setCustomPrompt] = useState(SAMPLE_VOICE_PRESETS[0].text_preview);
@@ -42,7 +43,11 @@ export function AudioTranscriber({ onUpdateState, customers }: AudioTranscriberP
   const handleToggleRecording = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Microphone recognition is not fully supported in this sandboxed frame browser environment. Please try in a new tab.");
+      if (showToast) {
+        showToast("Microphone recognition is not fully supported in this sandboxed frame browser environment. Please try in a new tab.", "info");
+      } else {
+        alert("Microphone recognition is not fully supported in this sandboxed frame browser environment. Please try in a new tab.");
+      }
       return;
     }
 

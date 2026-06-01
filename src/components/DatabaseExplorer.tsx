@@ -121,6 +121,10 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
 
       const parsedRecords: any[] = [];
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const existingEmails = new Set(customers.map(c => (c.email || "").toLowerCase().trim()));
+      const emailsInCSV = new Set<string>();
+      let duplicateExistingCount = 0;
+      let duplicateCSVCount = 0;
 
       for (let i = 1; i < rawLines.length; i++) {
         const line = rawLines[i];
@@ -162,6 +166,19 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
           continue;
         }
 
+        const lowerEmail = emailVal.toLowerCase().trim();
+        if (existingEmails.has(lowerEmail)) {
+          duplicateExistingCount++;
+          errorsList.push(`Line ${fileLineNum}: Duplicate email check - '${emailVal}' already exists in CRM database.`);
+          continue;
+        }
+        if (emailsInCSV.has(lowerEmail)) {
+          duplicateCSVCount++;
+          errorsList.push(`Line ${fileLineNum}: Duplicate email check - '${emailVal}' is duplicated within this CSV file.`);
+          continue;
+        }
+        emailsInCSV.add(lowerEmail);
+
         // Optional indices
         const stageIdx = headers.findIndex(h => h.toLowerCase().includes("stage") || h.toLowerCase().includes("lifecycle"));
         const tierIdx = headers.findIndex(h => h.toLowerCase() === "tier");
@@ -186,6 +203,13 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
         };
 
         parsedRecords.push(parsedRecord);
+      }
+
+      if (duplicateExistingCount > 0 || duplicateCSVCount > 0) {
+        const warningMsg = `⚠️ Bulk Import Warn: Skipped ${duplicateExistingCount} existing CRM duplicates & ${duplicateCSVCount} file duplicates. Check syntax alerts below.`;
+        if (showToast) {
+          showToast(warningMsg, "error");
+        }
       }
 
       if (errorsList.length > 0) {
@@ -274,6 +298,28 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
       c.uid.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStage = stageFilter === "All" || c.lifecycleStage === stageFilter;
     return matchesSearch && matchesStage;
+  });
+
+  // Filtered campaign list
+  const filteredCampaigns = campaigns.filter(camp => {
+    return (
+      camp.campaign_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      camp.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      camp.targetSegment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      camp.status.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
+
+  // Filtered support ticket list
+  const filteredTickets = tickets.filter(t => {
+    return (
+      t.ticket_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.customer_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.issue.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.priority.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.status.toLowerCase().includes(searchTerm.toLowerCase())
+    );
   });
 
   // Risk weighting helper for sorting
@@ -562,37 +608,74 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
       </div>
 
       {activeTab === "explorer" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Sub collection selectors */}
-          <div className="lg:col-span-3 space-y-2">
-            <h4 className="text-[10px] font-bold text-[#A1A1AA] uppercase tracking-wider mb-2 font-sans">Firestore Collections</h4>
-            <button
-              onClick={() => setActiveCollection("customers")}
-              className={`w-full text-left p-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${activeCollection === "customers" ? "bg-[#0A0A0B] border border-[#C5A059] text-[#C5A059] font-bold" : "bg-[#141416] border border-[#27272A] hover:bg-white/5 text-[#A1A1AA]"}`}
-            >
-              <span>📁 customers</span>
-              <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${activeCollection === "customers" ? "bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20" : "bg-white/5 text-[#E4E4E7]"}`}>
-                {filteredCustomers.length !== customers.length ? `${filteredCustomers.length}/${customers.length}` : customers.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveCollection("campaigns")}
-              className={`w-full text-left p-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${activeCollection === "campaigns" ? "bg-[#0A0A0B] border border-[#C5A059] text-[#C5A059] font-bold" : "bg-[#141416] border border-[#27272A] hover:bg-white/5 text-[#A1A1AA]"}`}
-            >
-              <span>📁 campaigns</span>
-              <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${activeCollection === "campaigns" ? "bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20" : "bg-white/5 text-[#E4E4E7]"}`}>
-                {campaigns.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveCollection("support_tickets")}
-              className={`w-full text-left p-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${activeCollection === "support_tickets" ? "bg-[#0A0A0B] border border-[#C5A059] text-[#C5A059] font-bold" : "bg-[#141416] border border-[#27272A] hover:bg-white/5 text-[#A1A1AA]"}`}
-            >
-              <span>📁 support_tickets</span>
-              <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${activeCollection === "support_tickets" ? "bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20" : "bg-white/5 text-[#E4E4E7]"}`}>
-                {tickets.length}
-              </span>
-            </button>
+        <div className="space-y-4">
+          {/* Real-time Global Search Input */}
+          <div className="bg-[#0A0A0B]/60 border border-[#27272A]/80 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <label htmlFor="global-search" className="block text-[10px] font-bold text-[#A1A1AA] uppercase tracking-wider mb-1.5 font-mono">
+                Real-Time Global Collections Query Selector
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 w-4 h-4 text-zinc-500" />
+                <input
+                  id="global-search"
+                  type="text"
+                  placeholder={`Search across active /${activeCollection} collection (by ID, names, details)...`}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-[#141416] border border-[#27272A] rounded-xl pl-9 pr-9 py-2.5 text-xs text-[#E4E4E7] placeholder-[#71717A] focus:outline-none focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059]/30 transition-all font-sans"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-3 text-zinc-500 hover:text-zinc-300 font-bold cursor-pointer"
+                    title="Clear query"
+                    type="button"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {searchTerm && (
+              <div className="bg-[#C5A059]/10 border border-[#C5A059]/25 text-[#C5A059] text-[10px] font-mono rounded-xl px-3.5 py-2.5 flex items-center gap-1.5 shrink-0 self-start md:self-auto uppercase tracking-wider font-extrabold">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#C5A059] animate-pulse shrink-0"></span>
+                <span>MATCHING FILTERS ACTIVE</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Sub collection selectors */}
+            <div className="lg:col-span-3 space-y-2">
+              <h4 className="text-[10px] font-bold text-[#A1A1AA] uppercase tracking-wider mb-2 font-sans">Firestore Collections</h4>
+              <button
+                onClick={() => setActiveCollection("customers")}
+                className={`w-full text-left p-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${activeCollection === "customers" ? "bg-[#0A0A0B] border border-[#C5A059] text-[#C5A059] font-bold" : "bg-[#141416] border border-[#27272A] hover:bg-white/5 text-[#A1A1AA]"}`}
+              >
+                <span>📁 customers</span>
+                <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${activeCollection === "customers" ? "bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20" : "bg-white/5 text-[#E4E4E7]"}`}>
+                  {filteredCustomers.length !== customers.length ? `${filteredCustomers.length}/${customers.length}` : customers.length}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveCollection("campaigns")}
+                className={`w-full text-left p-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${activeCollection === "campaigns" ? "bg-[#0A0A0B] border border-[#C5A059] text-[#C5A059] font-bold" : "bg-[#141416] border border-[#27272A] hover:bg-white/5 text-[#A1A1AA]"}`}
+              >
+                <span>📁 campaigns</span>
+                <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${activeCollection === "campaigns" ? "bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20" : "bg-white/5 text-[#E4E4E7]"}`}>
+                  {filteredCampaigns.length !== campaigns.length ? `${filteredCampaigns.length}/${campaigns.length}` : campaigns.length}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveCollection("support_tickets")}
+                className={`w-full text-left p-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${activeCollection === "support_tickets" ? "bg-[#0A0A0B] border border-[#C5A059] text-[#C5A059] font-bold" : "bg-[#141416] border border-[#27272A] hover:bg-white/5 text-[#A1A1AA]"}`}
+              >
+                <span>📁 support_tickets</span>
+                <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${activeCollection === "support_tickets" ? "bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20" : "bg-white/5 text-[#E4E4E7]"}`}>
+                  {filteredTickets.length !== tickets.length ? `${filteredTickets.length}/${tickets.length}` : tickets.length}
+                </span>
+              </button>
 
             {/* QUICK DOC ACTIONS */}
             <div className="pt-4 border-t border-[#27272A]">
@@ -867,7 +950,7 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
               );
             })}
 
-            {activeCollection === "campaigns" && campaigns.map(camp => (
+            {activeCollection === "campaigns" && filteredCampaigns.map(camp => (
               <div key={camp.campaign_id} className="bg-[#0A0A0B] border border-[#27272A] rounded-xl p-3.5 text-xs flex flex-col justify-between hover:border-[#C5A059]/30 transition-all font-sans">
                 <div className="flex justify-between font-mono text-[10px] text-[#A1A1AA] mb-1.5">
                   <span>ID: {camp.campaign_id}</span>
@@ -884,7 +967,13 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
               </div>
             ))}
 
-            {activeCollection === "support_tickets" && tickets.map(t => (
+            {activeCollection === "campaigns" && filteredCampaigns.length === 0 && (
+              <div className="text-center py-6 bg-[#0A0A0B] rounded-xl border border-[#27272A] text-xs text-[#A1A1AA] font-mono">
+                No campaigns match your search filter.
+              </div>
+            )}
+
+            {activeCollection === "support_tickets" && filteredTickets.map(t => (
               <div key={t.ticket_id} className="bg-[#0A0A0B] border border-[#27272A] rounded-xl p-3.5 text-xs flex flex-col justify-between hover:border-[#C5A059]/30 transition-all font-sans">
                 <div className="flex justify-between font-mono text-[10px] text-[#A1A1AA] mb-1.5">
                   <span>ID: {t.ticket_id}</span>
@@ -898,6 +987,12 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
                 </div>
               </div>
             ))}
+
+            {activeCollection === "support_tickets" && filteredTickets.length === 0 && (
+              <div className="text-center py-6 bg-[#0A0A0B] rounded-xl border border-[#27272A] text-xs text-[#A1A1AA] font-mono">
+                No support tickets match your search filter.
+              </div>
+            )}
           </div>
 
           {/* CREATE CUSTOMER DOCK */}
@@ -1161,7 +1256,8 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
             )}
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {activeTab === "rules" && (
         <div className="space-y-4">

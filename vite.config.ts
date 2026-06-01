@@ -12,12 +12,10 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // Force Vite to handle HMR connections explicitly
-      hmr: process.env.DISABLE_HMR === 'true' ? false : {
+      hmr: {
+        // Force HMR to use standard protocol settings or specific ports if behind proxies
         protocol: 'ws',
         host: 'localhost',
-        port: 5173, // Matches standard port
-        clientPort: 5173, // Forces the client to use the exact local port
       },
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {

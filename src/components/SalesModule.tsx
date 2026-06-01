@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Customer } from "../types";
 import { RevenueForecast } from "./RevenueForecast";
+import { exportCustomersToPDF } from "../utils/pdfExport";
 import { 
   Brain, 
   DollarSign, 
@@ -486,14 +487,6 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
             note: r.note,
             time: r.time
           });
-
-          try {
-            setTimeout(() => {
-              window.alert(`🔔 Follow-up Reminder Fired!\n\nCustomer: ${r.customerName}\nTime: ${new Date(r.time).toLocaleString()}\nTask: ${r.note}`);
-            }, 100);
-          } catch (e) {
-            console.warn("Iframe window.alert restricted:", e);
-          }
         }
       });
     }, 1000);
@@ -736,9 +729,20 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
 
         {/* 2. MAIN PROSPECTOR & WIN PREDICTOR */}
         <div className="bg-[#141416] rounded-2xl p-6 shadow-xl border border-[#27272A]" id="opportunity-scoring-card">
-          <div className="flex items-center space-x-2.5 mb-5 border-b border-[#27272A] pb-3">
-            <Brain className="w-5 h-5 text-[#C5A059]" />
-            <h3 className="text-lg font-bold text-[#E4E4E7] tracking-tight">Opportunity & Win Predictor</h3>
+          <div className="flex items-center justify-between gap-3 mb-5 border-b border-[#27272A] pb-3">
+            <div className="flex items-center space-x-2.5">
+              <Brain className="w-5 h-5 text-[#C5A059]" />
+              <h3 className="text-lg font-bold text-[#E4E4E7] tracking-tight">Opportunity & Win Predictor</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => exportCustomersToPDF(filteredCustomers, summaries, leadScores, churnRisks)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wide uppercase bg-[#0A0A0B] border border-zinc-800 hover:border-emerald-500/40 hover:text-emerald-450 rounded-xl text-zinc-400 font-mono transition-all cursor-pointer shadow-md shrink-0"
+              title="Bulk Export currently filtered CRM customers as a high-fidelity PDF report bundle"
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
+              <span>Bulk PDF Export ({filteredCustomers.length})</span>
+            </button>
           </div>
 
           <div className="space-y-4">
@@ -932,15 +936,26 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence }:
                     </h4>
                     <span className="text-[10px] text-zinc-500 font-mono tracking-wider block font-bold uppercase">{activeCustomer.tier} ACCOUNT</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold tracking-wide uppercase bg-zinc-900 border border-zinc-800 hover:border-[#C5A059]/40 hover:text-[#C5A059] rounded-lg text-zinc-400 font-mono transition-all cursor-pointer shadow"
-                    title="Triggers neat printer-friendly executive report preview"
-                  >
-                    <Printer className="w-3.5 h-3.5 shrink-0" />
-                    <span>Print Report</span>
-                  </button>
+                  <div className="flex items-center gap-1.5 scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold tracking-wide uppercase bg-zinc-900 border border-zinc-800 hover:border-[#C5A059]/40 hover:text-[#C5A059] rounded-lg text-zinc-400 font-mono transition-all cursor-pointer shadow"
+                      title="Triggers neat printer-friendly executive report preview"
+                    >
+                      <Printer className="w-3.5 h-3.5 shrink-0" />
+                      <span>Print</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportCustomersToPDF([activeCustomer], summaries, leadScores, churnRisks)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold tracking-wide uppercase bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 hover:text-emerald-450 rounded-lg text-zinc-400 font-mono transition-all cursor-pointer shadow"
+                      title="Export this detailed customer record as a high-fidelity PDF report"
+                    >
+                      <FileText className="w-3.5 h-3.5 shrink-0 text-emerald-450" />
+                      <span>Export PDF</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex justify-between items-center">

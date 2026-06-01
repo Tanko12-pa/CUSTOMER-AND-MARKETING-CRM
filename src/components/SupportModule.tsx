@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { SupportTicket, Customer } from "../types";
 import { MessageSquare, ShieldAlert, Sparkles, Send, CheckSquare, Smile, Frown, Meh, AlertTriangle } from "lucide-react";
 
@@ -6,9 +6,10 @@ interface SupportModuleProps {
   tickets: SupportTicket[];
   customers: Customer[];
   onUpdateState: (type: string, payload: any) => Promise<void>;
+  showToast?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-export function SupportModule({ tickets, customers, onUpdateState }: SupportModuleProps) {
+export function SupportModule({ tickets, customers, onUpdateState, showToast }: SupportModuleProps) {
   const [selectedTicketId, setSelectedTicketId] = useState<string>(tickets[0]?.ticket_id || "");
   const [ticketPrompt, setTicketPrompt] = useState("");
   const [aiResponse, setAiResponse] = useState("");
@@ -17,6 +18,26 @@ export function SupportModule({ tickets, customers, onUpdateState }: SupportModu
   const [newTicketPriority, setNewTicketPriority] = useState<"Low" | "Medium" | "High" | "Urgent">("Medium");
   const [newTicketCustomer, setNewTicketCustomer] = useState(customers[0]?.uid || "");
   const [showCreateForm, setShowCreateForm] = useState(false);
+
+  const issueInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Catch Ctrl+N or Cmd+N
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setShowCreateForm(true);
+        setTimeout(() => {
+          issueInputRef.current?.focus();
+        }, 120);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   // Customer Self-Service Portal Simulator states
   const [isCustomerPortal, setIsCustomerPortal] = useState(false);
@@ -117,7 +138,11 @@ export function SupportModule({ tickets, customers, onUpdateState }: SupportModu
 
     setPortalIssueText("");
     setPortalSentimentResult(null);
-    alert("🎉 Incident ticket successfully dispatched! Syncing with live support engineers.");
+    if (showToast) {
+      showToast("🎉 Incident ticket successfully dispatched! Syncing with live support engineers.", "success");
+    } else {
+      alert("🎉 Incident ticket successfully dispatched! Syncing with live support engineers.");
+    }
   };
 
   const activeTicket = tickets.find(t => t.ticket_id === selectedTicketId) || tickets[0];
@@ -143,6 +168,9 @@ export function SupportModule({ tickets, customers, onUpdateState }: SupportModu
 
     setNewTicketIssue("");
     setShowCreateForm(false);
+    if (issueInputRef.current) {
+      issueInputRef.current.blur();
+    }
   };
 
   const handleAskAI = async () => {
@@ -221,9 +249,11 @@ export function SupportModule({ tickets, customers, onUpdateState }: SupportModu
 
                 <button
                   onClick={() => setShowCreateForm(!showCreateForm)}
-                  className="bg-[#0A0A0B] border border-[#27272A] text-[#E4E4E7] hover:bg-white/5 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                  className="bg-[#0A0A0B] border border-[#27272A] text-[#E4E4E7] hover:bg-white/5 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5"
+                  title="Hotkey: Press Ctrl+N anywhere to trigger this form"
                 >
-                  + File Incident Ticket
+                  <span>+ File Incident Ticket</span>
+                  <span className="text-[9px] px-1 bg-zinc-800 text-[#C5A059] rounded font-mono border border-zinc-700/50">Ctrl+N</span>
                 </button>
               </div>
 
@@ -249,6 +279,7 @@ export function SupportModule({ tickets, customers, onUpdateState }: SupportModu
                     <div>
                       <label className="block text-[10px] font-bold text-[#A1A1AA] mb-1 font-sans">Issue Description</label>
                       <textarea
+                        ref={issueInputRef}
                         rows={3}
                         required
                         placeholder="Describe technical delay, performance rate, subscription, etc."
