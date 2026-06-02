@@ -38,10 +38,10 @@ router.post("/api/auth/signup", async (req, res) => {
 // Seed user for testing
 const initialTrialEnds = new Date();
 initialTrialEnds.setDate(initialTrialEnds.getDate() + 7);
-usersDb.set("akindewum@gmail.com", {
+usersDb.set("operator@company.com", {
   id: "seed_trial_1",
-  name: "Akindewum",
-  email: "akindewum@gmail.com",
+  name: "CRM Operator",
+  email: "operator@company.com",
   password: "admin_password_999",
   trialEndsAt: initialTrialEnds.toISOString(),
   subscriptionStatus: "trialing",

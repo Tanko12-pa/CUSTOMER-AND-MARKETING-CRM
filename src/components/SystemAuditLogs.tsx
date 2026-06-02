@@ -19,9 +19,10 @@ import { AuditLog } from "../types";
 interface SystemAuditLogsProps {
   logs: AuditLog[];
   onRefresh: () => Promise<void>;
+  userEmail?: string;
 }
 
-export function SystemAuditLogs({ logs, onRefresh }: SystemAuditLogsProps) {
+export function SystemAuditLogs({ logs, onRefresh, userEmail }: SystemAuditLogsProps) {
   // Operational states
   const [searchQuery, setSearchQuery] = useState("");
   const [actionCategory, setActionCategory] = useState<"ALL" | "CREATE" | "READ" | "UPDATE" | "DELETE" | "SYSTEM">("ALL");
@@ -206,8 +207,8 @@ export function SystemAuditLogs({ logs, onRefresh }: SystemAuditLogsProps) {
           </div>
           <div className="p-3 bg-[#0A0A0B] rounded-xl border border-[#27272A]/70 text-center">
             <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-mono font-medium block">Active Operator Context</span>
-            <span className="text-xs font-bold text-[#C5A059] font-mono truncate mt-2.5 block px-1" title="akindewum@gmail.com">
-              akindewum@gmail.com
+            <span className="text-xs font-bold text-[#C5A059] font-mono truncate mt-2.5 block px-1" title={userEmail || "operator@company.com"}>
+              {userEmail || "operator@company.com"}
             </span>
           </div>
         </div>

@@ -420,7 +420,7 @@ let mockAuditLogs = [
     timestamp: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
     action: "READ_RECORD",
     collection: "customers",
-    user: "akindewum@gmail.com",
+    user: "operator@company.com",
     status: "Success" as "Success" | "Failed",
     details: "Retrieved customer database for user session index sync.",
   },
@@ -429,7 +429,7 @@ let mockAuditLogs = [
     timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
     action: "REVENUE_INSIGHTS_RUN",
     collection: "revenue_intelligence",
-    user: "akindewum@gmail.com",
+    user: "operator@company.com",
     status: "Success" as "Success" | "Failed",
     details: "Automatically modeled deal risk parameters for Almaric Vance using math matrix thresholds.",
   }
@@ -456,7 +456,7 @@ function cleanUndefined(obj: any): any {
 }
 
 // Helper to record audit logs
-function addAudit(action: string, collection: string, details: string, user: string = "akindewum@gmail.com", statusStr: "Success" | "Failed" = "Success", changedFields?: Record<string, { old: any; new: any }>) {
+function addAudit(action: string, collection: string, details: string, user: string = currentUserSession?.email || "operator@company.com", statusStr: "Success" | "Failed" = "Success", changedFields?: Record<string, { old: any; new: any }>) {
   const newLog = cleanUndefined({
     id: `log_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     timestamp: new Date().toISOString(),
@@ -487,8 +487,8 @@ interface CRMUser {
 // Global set of simulated database users
 let mockUsersList: CRMUser[] = [
   {
-    email: "akindewum@gmail.com",
-    name: "Akindewum",
+    email: "operator@company.com",
+    name: "CRM Operator",
     trialStartDate: new Date().toISOString(),
     plan: "trial",
     subscriptionActive: true
@@ -885,7 +885,7 @@ app.post("/api/update-state", async (req, res) => {
         if (db) {
           await setDoc(doc(db, "customers", payload.uid), mockCustomers[idx]);
         }
-        addAudit("UPDATE_RECORD", "customers", `Updated customer ${mockCustomers[idx].name}`, "akindewum@gmail.com", "Success", changedFields);
+        addAudit("UPDATE_RECORD", "customers", `Updated customer ${mockCustomers[idx].name}`, currentUserSession?.email || "operator@company.com", "Success", changedFields);
       }
     } else if (type === "DELETE_CUSTOMERS") {
       const uidsToDelete = payload.uids || [];
@@ -947,7 +947,7 @@ app.post("/api/update-state", async (req, res) => {
         if (db) {
           await setDoc(doc(db, "support_tickets", payload.ticket_id), mockSupportTickets[idx]);
         }
-        addAudit("UPDATE_RECORD", "support_tickets", `Updated support ticket ${payload.ticket_id} to status ${payload.status || 'Updated'}`, "akindewum@gmail.com", "Success", changedFields);
+        addAudit("UPDATE_RECORD", "support_tickets", `Updated support ticket ${payload.ticket_id} to status ${payload.status || 'Updated'}`, currentUserSession?.email || "operator@company.com", "Success", changedFields);
       }
     } else if (type === "LAUNCH_CAMPAIGN") {
       const idx = mockCampaigns.findIndex(camp => camp.campaign_id === payload.campaign_id);
@@ -1836,7 +1836,7 @@ Analyzing helpdesk metrics (**${dbContext.stats.totalTickets} total tickets**, *
 app.post("/api/email-daily-digest", async (req, res) => {
   try {
     const { ownerEmail } = req.body;
-    const recipient = ownerEmail || "akindewum@gmail.com";
+    const recipient = ownerEmail || currentUserSession?.email || "operator@company.com";
 
     // 1. Gather high-risk deals from customer database
     const highRiskDeals = mockCustomers.filter(c => {

@@ -204,7 +204,7 @@ export default function App() {
   const handleDownloadChatHistory = () => {
     if (chatMessages.length === 0) return;
     const timestampStr = new Date().toISOString().replace("T", " ").substring(0, 19);
-    const operatorEmail = currentUser?.email || "akindewum@gmail.com";
+    const operatorEmail = currentUser?.email || "operator@company.com";
     
     let markdown = `# CRM Revenue Copilot Chat Transcript\n`;
     markdown += `**Exported on (UTC):** ${timestampStr}\n`;
@@ -603,7 +603,7 @@ export default function App() {
 
     try {
       if (chatMode === "premium") {
-        const userId = currentUser?.email || "akindewum@gmail.com";
+        const userId = currentUser?.email || "operator@company.com";
         const result = await generateAIContent(userMsg, userId);
         if (result) {
           setChatMessages(prev => [...prev, { sender: "gemini", text: result }]);
@@ -764,7 +764,7 @@ export default function App() {
                 </span>
               </h1>
               <p className="text-xs text-[#A1A1AA] font-mono mt-0.5">
-                Secured Workspace Node // Admin auth: <span className="underline">akindewum@gmail.com</span>
+                Secured Workspace Node // Active Operator: <span className="underline">{currentUser.email}</span>
               </p>
             </div>
           </div>
@@ -1044,6 +1044,7 @@ export default function App() {
                     campaigns={campaigns} 
                     tickets={tickets} 
                     onUpdateState={handleUpdateState} 
+                    userEmail={currentUser?.email}
                   />
                 )}
 
@@ -1070,6 +1071,7 @@ export default function App() {
                       onUpdateState={handleUpdateState} 
                       onTriggerIntelligence={handleTriggerIntelligence} 
                       showToast={showToast}
+                      userEmail={currentUser?.email}
                     />
                   </div>
                 )}
@@ -1106,6 +1108,7 @@ export default function App() {
                     logs={auditLogs}
                     onUpdateState={handleUpdateState} 
                     showToast={showToast}
+                    userEmail={currentUser?.email}
                   />
                 )}
 
@@ -1113,6 +1116,7 @@ export default function App() {
                   <SystemAuditLogs 
                     logs={auditLogs}
                     onRefresh={syncStateData}
+                    userEmail={currentUser?.email}
                   />
                 )}
 

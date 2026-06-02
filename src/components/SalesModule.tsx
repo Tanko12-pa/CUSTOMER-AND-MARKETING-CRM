@@ -30,9 +30,10 @@ interface SalesModuleProps {
   onUpdateState: (type: string, payload: any) => Promise<void>;
   onTriggerIntelligence: (data: { uid: string; dealValue: number; lastInteractionDays: number }) => Promise<void>;
   showToast?: (message: string, type?: "success" | "error" | "info") => void;
+  userEmail?: string;
 }
 
-export function SalesModule({ customers, onUpdateState, onTriggerIntelligence, showToast }: SalesModuleProps) {
+export function SalesModule({ customers, onUpdateState, onTriggerIntelligence, showToast, userEmail }: SalesModuleProps) {
   const [filterType, setFilterType] = useState<"all" | "high-risk" | "enterprise" | "in-progress">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUid, setSelectedUid] = useState<string>(customers[0]?.uid || "");
@@ -53,7 +54,7 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence, s
       const response = await fetch("/api/email-daily-digest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerEmail: "akindewum@gmail.com" })
+        body: JSON.stringify({ ownerEmail: userEmail || "operator@company.com" })
       });
       const data = await response.json();
       setDigestResult(data);
@@ -61,7 +62,7 @@ export function SalesModule({ customers, onUpdateState, onTriggerIntelligence, s
       console.error(err);
       setDigestResult({
         success: false,
-        recipient: "akindewum@gmail.com",
+        recipient: userEmail || "operator@company.com",
         digestSubject: "Error Generating Digest",
         digestBody: "Failed to communicate with digest server. Please check your network and Gemini API keys."
       });

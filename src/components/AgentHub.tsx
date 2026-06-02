@@ -28,6 +28,7 @@ interface AgentHubProps {
   campaigns: any[];
   tickets: any[];
   onUpdateState: (type: string, payload: any) => Promise<void>;
+  userEmail?: string;
 }
 
 interface Message {
@@ -38,7 +39,7 @@ interface Message {
   text: string;
 }
 
-export function AgentHub({ customers, campaigns, tickets, onUpdateState }: AgentHubProps) {
+export function AgentHub({ customers, campaigns, tickets, onUpdateState, userEmail }: AgentHubProps) {
   const [activeTab, setActiveTab2] = useState<"orchestrator" | "tutor" | "sales" | "marketing" | "support">("orchestrator");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -303,7 +304,7 @@ export function AgentHub({ customers, campaigns, tickets, onUpdateState }: Agent
               {/* Node 1: FRONTEND */}
               <div className="text-center p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 relative">
                 <span className="block font-bold">FRONTEND CLIENT CONSOLE</span>
-                <span className="text-[8px] text-zinc-500 font-sans">akindewum@gmail.com</span>
+                <span className="text-[8px] text-zinc-500 font-sans">{userEmail || "operator@company.com"}</span>
               </div>
 
               {/* VERTICAL ROUTE CONNECTOR */}

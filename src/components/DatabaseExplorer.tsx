@@ -29,9 +29,10 @@ interface DatabaseExplorerProps {
   logs: AuditLog[];
   onUpdateState: (type: string, payload: any) => Promise<void>;
   showToast?: (message: string, type?: "success" | "error" | "info") => void;
+  userEmail?: string;
 }
 
-export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdateState, showToast }: DatabaseExplorerProps) {
+export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdateState, showToast, userEmail }: DatabaseExplorerProps) {
   const [activeTab, setActiveTab] = useState<"explorer" | "rules" | "logs">("explorer");
   const [activeCollection, setActiveCollection] = useState<"customers" | "campaigns" | "support_tickets">("customers");
   
@@ -1314,7 +1315,7 @@ service cloud.firestore {
             <div className="flex items-center justify-between pb-3 border-b border-[#27272A] mb-3 text-[#A1A1AA] text-[11px]">
               <div className="flex items-center space-x-2">
                 <Terminal className="w-4 h-4 text-[#C5A059]" />
-                <span>FIREBASE ACTION AUDIT STREAM — akindewum@gmail.com</span>
+                <span>FIREBASE ACTION AUDIT STREAM — {userEmail || "operator@company.com"}</span>
               </div>
               <span className="text-emerald-450 tracking-widest text-[10px] animate-pulse">● LIVE TELEMETRY</span>
             </div>
