@@ -72,14 +72,151 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processCSVFile(e.dataTransfer.files[0]);
+      processFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      processCSVFile(e.target.files[0]);
+      processFile(e.target.files[0]);
     }
+  };
+
+  const processFile = (file: File) => {
+    if (file.name.toLowerCase().endsWith(".json")) {
+      processJSONFile(file);
+    } else {
+      processCSVFile(file);
+    }
+  };
+
+  const processJSONFile = (file: File) => {
+    setImportFileName(file.name);
+    setImportErrors([]);
+    setValidatedRecords([]);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) {
+          setImportErrors(["Could not read structured content from JSON file."]);
+          return;
+        }
+        
+        let data: any;
+        try {
+          data = JSON.parse(text);
+        } catch (parseErr: any) {
+          setImportErrors([`Invalid JSON format: ${parseErr.message || parseErr}`]);
+          return;
+        }
+
+        if (!Array.isArray(data)) {
+          setImportErrors(["JSON content must be a structured array of customer records."]);
+          return;
+        }
+
+        if (data.length === 0) {
+          setImportErrors(["JSON array of customer records is empty."]);
+          return;
+        }
+
+        const errorsList: string[] = [];
+        const parsedRecords: any[] = [];
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const existingEmails = new Set(customers.map(c => (c.email || "").toLowerCase().trim()));
+        const emailsInJSON = new Set<string>();
+        let duplicateExistingCount = 0;
+        let duplicateJSONCount = 0;
+
+        const validStages = ["Lead", "MQL", "SQL", "Customer", "Churned"];
+
+        data.forEach((item: any, idx: number) => {
+          const itemNum = idx + 1;
+          
+          // Check for mandatory fields: name, email, lifecycleStage
+          // Match any casing variations in keys for robustness (e.g. lifecycleStage, lifecyclestage, stage)
+          const nameKey = Object.keys(item).find(k => k.toLowerCase() === "name" || k.toLowerCase() === "fullname");
+          const emailKey = Object.keys(item).find(k => k.toLowerCase() === "email");
+          const stageKey = Object.keys(item).find(k => k.toLowerCase() === "lifecyclestage" || k.toLowerCase() === "stage");
+
+          const nameVal = nameKey && typeof item[nameKey] === "string" ? item[nameKey].trim() : "";
+          const emailVal = emailKey && typeof item[emailKey] === "string" ? item[emailKey].trim() : "";
+          const stageVal = stageKey && typeof item[stageKey] === "string" ? item[stageKey].trim() : "";
+
+          if (!nameVal) {
+            errorsList.push(`Record ${itemNum}: Mandatory field 'name' is missing, blank, or not a string.`);
+            return;
+          }
+          if (!emailVal) {
+            errorsList.push(`Record ${itemNum}: Mandatory field 'email' is missing, blank, or not a string.`);
+            return;
+          }
+          if (!emailPattern.test(emailVal)) {
+            errorsList.push(`Record ${itemNum}: '${emailVal}' is not a valid email address format.`);
+            return;
+          }
+          if (!stageVal) {
+            errorsList.push(`Record ${itemNum}: Mandatory field 'lifecycleStage' is missing, blank, or not a string.`);
+            return;
+          }
+          if (!validStages.includes(stageVal)) {
+            errorsList.push(`Record ${itemNum}: '${stageVal}' is not a valid lifecycleStage (must be one of: ${validStages.join(", ")}).`);
+            return;
+          }
+
+          const lowerEmail = emailVal.toLowerCase();
+          if (existingEmails.has(lowerEmail)) {
+            duplicateExistingCount++;
+            errorsList.push(`Record ${itemNum}: Duplicate email check - '${emailVal}' already exists in CRM database.`);
+            return;
+          }
+          if (emailsInJSON.has(lowerEmail)) {
+            duplicateJSONCount++;
+            errorsList.push(`Record ${itemNum}: Duplicate email check - '${emailVal}' is duplicated within this JSON file.`);
+            return;
+          }
+          emailsInJSON.add(lowerEmail);
+
+          const parsedRecord = {
+            name: nameVal,
+            email: emailVal,
+            lifecycleStage: stageVal,
+            tier: typeof item.tier === "string" ? item.tier.trim() : "Free",
+            leadScore: typeof item.leadScore === "number" ? item.leadScore : (typeof item.score === "number" ? item.score : 60),
+            lifetimeValue: typeof item.lifetimeValue === "number" ? item.lifetimeValue : (typeof item.ltv === "number" || typeof item.lifetimeValue === "number" ? Number(item.ltv || item.lifetimeValue) : 0),
+            sentiment: typeof item.sentiment === "string" ? item.sentiment : "Neutral",
+            lastInteractionDays: typeof item.lastInteractionDays === "number" ? item.lastInteractionDays : 1,
+            winProbability: stageVal === "Customer" ? 100 : (typeof item.winProbability === "number" ? item.winProbability : 50),
+            assignedRep: typeof item.assignedRep === "string" ? item.assignedRep : "Danielle Gold",
+            dealRiskStatus: typeof item.dealRiskStatus === "string" ? item.dealRiskStatus : "Low Risk",
+            createdAt: new Date().toISOString()
+          };
+
+          parsedRecords.push(parsedRecord);
+        });
+
+        if (duplicateExistingCount > 0 || duplicateJSONCount > 0) {
+          const warningMsg = `⚠️ Bulk Import Warn: Skipped CRM/file duplicates. Check details below.`;
+          if (showToast) {
+            showToast(warningMsg, "error");
+          }
+        }
+
+        if (errorsList.length > 0) {
+          setImportErrors(errorsList);
+        }
+
+        if (parsedRecords.length > 0) {
+          setValidatedRecords(parsedRecords);
+        }
+
+      } catch (err: any) {
+        setImportErrors([`Failed to process JSON file: ${err.message || err}`]);
+      }
+    };
+    reader.readAsText(file);
   };
 
   const processCSVFile = (file: File) => {
@@ -277,7 +414,44 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
     link.click();
     document.body.removeChild(link);
     if (showToast) {
-      showToast("CRM Customer Data Import template downloaded successfully.", "info");
+      showToast("CRM Customer Data Import CSV template downloaded successfully.", "info");
+    }
+  };
+
+  const handleDownloadJSONTemplate = () => {
+    const templateData = [
+      {
+        name: "Sarah Connor",
+        email: "s.connor@cyberdyne.com",
+        lifecycleStage: "Lead",
+        tier: "Free",
+        leadScore: 85,
+        lifetimeValue: 0,
+        sentiment: "Positive",
+        assignedRep: "Danielle Gold"
+      },
+      {
+        name: "John Connor",
+        email: "j.connor@cyberdyne.com",
+        lifecycleStage: "Customer",
+        tier: "Enterprise",
+        leadScore: 95,
+        lifetimeValue: 120000,
+        sentiment: "Positive",
+        assignedRep: "Danielle Gold"
+      }
+    ];
+    const blob = new Blob([JSON.stringify(templateData, null, 2)], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "crm_customers_import_template.json");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    if (showToast) {
+      showToast("CRM Customer Data Import JSON template downloaded successfully.", "info");
     }
   };
 
@@ -1107,7 +1281,7 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
             ) : (
               <div className="space-y-4">
                 <p className="text-[11px] text-[#A1A1AA] leading-relaxed">
-                  Bulk upload multiple client profiles simultaneously. Required headers are <strong className="text-white">Name</strong> and <strong className="text-white">Email</strong>. Values get validated locally before compilation.
+                  Bulk upload multiple client profiles simultaneously. Acceptable formats list <strong className="text-white">CSV</strong> (headers: Name, Email) and <strong className="text-white">JSON</strong> (keys: name, email, lifecycleStage). Values get validated locally.
                 </p>
 
                 {/* DRAG AND DROP ZONE */}
@@ -1131,14 +1305,18 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
                   <input
                     id="csv-file-browse-trigger"
                     type="file"
-                    accept=".csv"
+                    accept=".csv,.json"
                     onChange={handleFileChange}
                     className="hidden"
                   />
                   
                   {importFileName ? (
                     <div className="space-y-2">
-                      <FileSpreadsheet className="w-8 h-8 text-emerald-400 mx-auto" />
+                      {importFileName.toLowerCase().endsWith(".json") ? (
+                        <FileCode className="w-8 h-8 text-emerald-400 mx-auto" />
+                      ) : (
+                        <FileSpreadsheet className="w-8 h-8 text-emerald-400 mx-auto" />
+                      )}
                       <div>
                         <span className="text-xs text-white block truncate max-w-[200px] mx-auto font-mono font-bold">{importFileName}</span>
                         <span className="text-[10px] text-zinc-500 block">Click or drop another file to replace</span>
@@ -1148,23 +1326,32 @@ export function DatabaseExplorer({ customers, campaigns, tickets, logs, onUpdate
                     <div className="space-y-2.5">
                       <Upload className="w-8 h-8 text-[#C5A059] mx-auto" />
                       <div>
-                        <span className="text-xs text-[#E4E4E7] block font-semibold">Drag & drop CSV file here</span>
+                        <span className="text-xs text-[#E4E4E7] block font-semibold">Drag & drop JSON or CSV file here</span>
                         <span className="text-[10px] text-zinc-500 block mt-0.5">or click to browse local folders</span>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* TEMPLATE DOWNLOADA TRIGGER */}
+                {/* TEMPLATE DOWNLOAD TRIGGER */}
                 <div className="flex items-center justify-between text-[11px] bg-[#141416]/50 p-2.5 rounded-lg border border-[#27272A]">
                   <span className="text-zinc-400 font-mono">Reference Format Layout:</span>
-                  <button
-                    type="button"
-                    onClick={handleDownloadTemplate}
-                    className="text-[#C5A059] hover:underline font-bold text-[10px] uppercase font-mono cursor-pointer"
-                  >
-                    📥 Template.csv
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadTemplate}
+                      className="text-[#C5A059] hover:underline font-bold text-[10px] uppercase font-mono cursor-pointer border-r border-[#27272A] pr-2 mr-1"
+                    >
+                      📥 Template.csv
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadJSONTemplate}
+                      className="text-[#10B981] hover:underline font-bold text-[10px] uppercase font-mono cursor-pointer animate-pulse"
+                    >
+                      📥 Template.json
+                    </button>
+                  </div>
                 </div>
 
                 {/* LOCAL CLIENT VALIDATION SUMMARY OUTLET */}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   CreditCard, 
   Receipt, 
@@ -11,7 +11,13 @@ import {
   ShieldAlert,
   Calendar,
   DollarSign,
-  Sparkles
+  Sparkles,
+  Github,
+  GitBranch,
+  GitCommit,
+  FolderPlus,
+  Plus,
+  Loader2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -30,6 +36,222 @@ export function BillingManagement({
 }: BillingManagementProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [activeInvoiceStatement, setActiveInvoiceStatement] = useState<any | null>(null);
+
+  // --- GITHUB INTEGRATION STATES & HANDLERS ---
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [githubProfile, setGithubProfile] = useState<any>(null);
+  const [githubRepos, setGithubRepos] = useState<any[]>([]);
+  const [githubLoading, setGithubLoading] = useState(true);
+  const [githubRepoLoading, setGithubRepoLoading] = useState(false);
+  const [activeRepo, setActiveRepo] = useState("");
+  const [showCreateRepoModal, setShowCreateRepoModal] = useState(false);
+  const [newRepoName, setNewRepoName] = useState("");
+  const [newRepoDesc, setNewRepoDesc] = useState("");
+  const [newRepoPrivate, setNewRepoPrivate] = useState(false);
+  const [createRepoLoading, setCreateRepoLoading] = useState(false);
+  const [testPushLoading, setTestPushLoading] = useState(false);
+  const [testPushMessage, setTestPushMessage] = useState("Setup initial telemetry backups from CRM platform");
+  const [testPushPath, setTestPushPath] = useState("backups/crm-audit-test.json");
+  const [testPushContent, setTestPushContent] = useState(JSON.stringify({ 
+    platform: "Customer & Marketing CRM",
+    telemetryState: "Healthy",
+    writePermissionsGranted: true,
+    timestamp: new Date().toISOString()
+  }, null, 2));
+
+  // Fetch GitHub connection status
+  const fetchGithubProfile = async () => {
+    if (!currentUser?.email) return;
+    setGithubLoading(true);
+    try {
+      const response = await fetch(`/api/github/profile?email=${encodeURIComponent(currentUser.email)}`);
+      const data = await response.json();
+      if (data.connected) {
+        setGithubConnected(true);
+        setGithubProfile(data);
+        // Fetch repositories
+        fetchGithubRepos();
+      } else {
+        setGithubConnected(false);
+        setGithubProfile(null);
+        setGithubRepos([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch GitHub profile:", err);
+    } finally {
+      setGithubLoading(false);
+    }
+  };
+
+  const fetchGithubRepos = async () => {
+    if (!currentUser?.email) return;
+    setGithubRepoLoading(true);
+    try {
+      const response = await fetch(`/api/github/repos?email=${encodeURIComponent(currentUser.email)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setGithubRepos(data.repos || []);
+        if (data.repos && data.repos.length > 0 && !activeRepo) {
+          setActiveRepo(data.repos[0].name);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch GitHub repos:", err);
+    } finally {
+      setGithubRepoLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGithubProfile();
+  }, [currentUser?.email]);
+
+  const handleConnectGithub = async () => {
+    try {
+      const email = currentUser?.email || "anonymous";
+      const origin = window.location.origin;
+      const response = await fetch(`/api/auth/github/url?email=${encodeURIComponent(email)}&origin=${encodeURIComponent(origin)}`);
+      if (!response.ok) {
+        throw new Error("Failed to retrieve authorization URL");
+      }
+      const { url, simulated } = await response.json();
+      
+      if (simulated) {
+        showToast("Developer API keys missing in settings. Activating Sandbox Simulator.", "info");
+      } else {
+        showToast("Redirecting to GitHub with write:repo_hook and repo permissions...", "info");
+      }
+
+      const width = 600;
+      const height = 700;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+      
+      const authWindow = window.open(
+        url,
+        "github_oauth_popup",
+        `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes`
+      );
+
+      if (!authWindow) {
+        showToast("Popup blocked by browser. Please enable popups to authenticate GitHub.", "error");
+      }
+    } catch (error: any) {
+      console.error("GitHub connection error:", error);
+      showToast(error.message || "Failed to start GitHub authentication", "error");
+    }
+  };
+
+  // Listen for popup message
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+        return;
+      }
+      if (event.data?.type === 'GITHUB_OAUTH_SUCCESS') {
+        if (event.data.success) {
+          showToast("Successfully authenticated with GitHub! Write permissions active.", "success");
+          fetchGithubProfile();
+          onRefreshStates(); // Sync system audit logs
+        } else {
+          showToast(`GitHub connection failed: ${event.data.error || "Unknown Error"}`, "error");
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [currentUser?.email]);
+
+  const handleDisconnectGithub = async () => {
+    if (!window.confirm("Disconnect GitHub account? Your write credentials will be purged.")) return;
+    try {
+      const response = await fetch('/api/github/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: currentUser?.email })
+      });
+      if (response.ok) {
+        showToast("GitHub account disconnected.", "success");
+        setGithubConnected(false);
+        setGithubProfile(null);
+        setGithubRepos([]);
+        onRefreshStates();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to disconnect GitHub.", "error");
+    }
+  };
+
+  const handleCreateRepo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRepoName.trim()) return;
+    setCreateRepoLoading(true);
+    try {
+      const response = await fetch('/api/github/create-repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: currentUser?.email,
+          name: newRepoName.trim(),
+          description: newRepoDesc,
+          isPrivate: newRepoPrivate
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        showToast(`Created repository ${data.repo.name} successfully!`, "success");
+        setShowCreateRepoModal(false);
+        setNewRepoName("");
+        setNewRepoDesc("");
+        setNewRepoPrivate(false);
+        await fetchGithubRepos();
+        setActiveRepo(data.repo.name);
+        onRefreshStates();
+      } else {
+        showToast(data.error || "Failed to create repository", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error creating repository", "error");
+    } finally {
+      setCreateRepoLoading(false);
+    }
+  };
+
+  const handleTestPush = async () => {
+    if (!activeRepo) {
+      showToast("Please select a repository first.", "error");
+      return;
+    }
+    setTestPushLoading(true);
+    try {
+      const response = await fetch('/api/github/push-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: currentUser?.email,
+          repo: activeRepo,
+          path: testPushPath,
+          content: testPushContent,
+          message: testPushMessage
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        showToast(`Successfully committed '${testPushPath}' to ${activeRepo}!`, "success");
+        onRefreshStates();
+      } else {
+        showToast(data.error || "Failed to commit file", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error committing file", "error");
+    } finally {
+      setTestPushLoading(false);
+    }
+  };
 
   // Generate dynamic invoice list based on current user plan
   const mockInvoices = [
@@ -370,6 +592,318 @@ export function BillingManagement({
           </div>
         )}
       </div>
+
+      {/* 3. DEVELOPER INTEGRATIONS CONSOLE */}
+      <div className="bg-[#141416] border border-[#27272A] rounded-2xl shadow-xl overflow-hidden" id="github-developer-ecosystem">
+        <div className="border-b border-[#27272A] px-5 py-4 flex items-center justify-between bg-[#141416]">
+          <span className="text-sm font-bold text-white flex items-center gap-2">
+            <Github className="w-4 h-4 text-[#C5A059]" />
+            GitHub Developer Ecosystem
+          </span>
+          <span className="bg-[#C5A059]/10 border border-[#C5A059]/20 text-[#C5A059] text-[9px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider font-mono">
+            Write Permissions Enabled
+          </span>
+        </div>
+
+        {githubLoading ? (
+          <div className="p-12 text-center text-[#71717A] space-y-3">
+            <Loader2 className="w-6 h-6 text-[#C5A059] animate-spin mx-auto" />
+            <p className="text-xs font-mono">Synchronizing connection states with GitHub services...</p>
+          </div>
+        ) : !githubConnected ? (
+          <div className="p-8 text-center max-w-xl mx-auto space-y-5">
+            <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto shadow-inner">
+              <Github className="w-6 h-6 text-zinc-400" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-white font-sans">Connect GitHub Integration</h3>
+              <p className="text-xs text-[#A1A1AA] leading-relaxed">
+                Unlock automated exports, commit generated markdown marketing campaigns, backup system database telemetry, or register secure repository commit-webhooks.
+              </p>
+            </div>
+
+            <div className="bg-[#0A0A0B] border border-[#27272A] p-4 rounded-xl text-left space-y-2.5">
+              <span className="text-[10px] font-bold text-[#C5A059] uppercase tracking-wider font-mono block">Requested Authorization Scopes</span>
+              <ul className="text-[11px] space-y-2 text-[#A1A1AA] font-sans">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-white">repo</strong> (Full control of private & public repositories)
+                  </div>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-white">write:repo_hook</strong> (Full permissions to edit & deploy repository webhooks)
+                  </div>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-white">public_repo</strong> (Write public repositories, pull/commit content)
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <button
+              onClick={handleConnectGithub}
+              className="px-5 py-2.5 bg-white text-[#0A0A0B] font-extrabold hover:bg-neutral-200 border border-transparent rounded-xl text-xs uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+            >
+              <Github className="w-4 h-4" />
+              Connect GitHub Account
+            </button>
+          </div>
+        ) : (
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Connection Credentials Card */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-[#0A0A0B] border border-[#27272A] rounded-xl p-4 space-y-4">
+                <span className="text-[10px] text-[#71717A] uppercase tracking-wider font-mono block">Connection Profile</span>
+                
+                <div className="flex items-center gap-3">
+                  <img 
+                    src={githubProfile?.avatarUrl || "https://github.com/identicons/dummy.png"} 
+                    alt="GitHub Avatar" 
+                    className="w-12 h-12 rounded-xl border border-[#27272A] bg-zinc-800"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div>
+                    <h4 className="text-sm font-bold text-white font-sans">{githubProfile?.username}</h4>
+                    <span className="text-[10px] text-zinc-500 font-mono block">Connected: {githubProfile?.connectedAt ? new Date(githubProfile.connectedAt).toLocaleDateString() : "Active"}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-[#27272A]/80 pt-3 space-y-2">
+                  <span className="text-[9px] text-[#71717A] uppercase tracking-wider font-mono block">Active Session Token Scopes</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {githubProfile?.scopes?.map((scope: string) => (
+                      <span key={scope} className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] font-mono text-zinc-400">
+                        {scope}
+                      </span>
+                    )) || (
+                      <>
+                        <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] font-mono text-zinc-400">repo</span>
+                        <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] font-mono text-zinc-400">write:repo_hook</span>
+                        <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] font-mono text-zinc-400">public_repo</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={handleDisconnectGithub}
+                    className="w-full py-2 bg-red-950/20 hover:bg-red-950/40 text-red-400 border border-red-900/40 hover:border-red-500 rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all"
+                  >
+                    Disconnect Integration
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-[#0A0A0B]/60 border border-[#27272A]/40 rounded-xl p-4 text-[11px] text-[#A1A1AA] leading-relaxed space-y-1.5">
+                <span className="text-[9px] text-[#71717A] uppercase tracking-wider font-mono block">Developer Notice</span>
+                <p>
+                  Because this application is operating in a secure preview container sandbox, write operations are channeled via the authorized API gateway. All transaction audits are saved into Firestore.
+                </p>
+              </div>
+            </div>
+
+            {/* Repository and Write Actions Card */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="bg-[#0A0A0B] border border-[#27272A] rounded-xl p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#71717A] uppercase tracking-wider font-mono">Target Repository Settings</span>
+                  <button
+                    onClick={() => setShowCreateRepoModal(true)}
+                    className="px-2 py-1 bg-zinc-900 hover:bg-[#C5A059] hover:text-[#0A0A0B] text-[#C5A059] border border-zinc-800 hover:border-transparent rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                  >
+                    <Plus className="w-3 h-3" /> Create New Repo
+                  </button>
+                </div>
+
+                {githubRepoLoading ? (
+                  <div className="py-6 text-center text-zinc-500 text-[11px] font-mono flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 text-[#C5A059] animate-spin" />
+                    Querying repository index...
+                  </div>
+                ) : githubRepos.length === 0 ? (
+                  <div className="py-6 text-center text-zinc-500 text-[11px] space-y-2">
+                    <p>No active repositories linked to this account found.</p>
+                    <button
+                      onClick={() => setShowCreateRepoModal(true)}
+                      className="px-3 py-1.5 bg-[#C5A059] text-[#0A0A0B] font-bold text-[10px] uppercase rounded-lg cursor-pointer"
+                    >
+                      Initialize Sandbox Repo
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 font-sans">
+                    <div>
+                      <label className="text-[10px] text-zinc-500 font-mono block mb-1">Select Connected Repository</label>
+                      <select
+                        value={activeRepo}
+                        onChange={(e) => setActiveRepo(e.target.value)}
+                        className="w-full bg-[#141416] border border-[#27272A] rounded-lg p-2 text-xs text-white focus:outline-none focus:border-[#C5A059] font-mono"
+                      >
+                        {githubRepos.map((r: any) => (
+                          <option key={r.name} value={r.name}>
+                            {r.name} {r.private ? "🔒 (Private)" : "🌐 (Public)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="border-t border-[#27272A]/80 pt-3 space-y-3">
+                      <span className="text-[10px] text-[#71717A] uppercase tracking-wider font-mono block">Verify Commit & Write Permissions</span>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] text-zinc-500 font-mono block mb-0.5">Commit Commit Path</label>
+                          <input 
+                            type="text" 
+                            value={testPushPath}
+                            onChange={(e) => setTestPushPath(e.target.value)}
+                            className="w-full bg-[#141416] border border-[#27272A] rounded-lg p-1.5 text-[11px] text-white focus:outline-none focus:border-[#C5A059] font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-zinc-500 font-mono block mb-0.5">Commit message</label>
+                          <input 
+                            type="text" 
+                            value={testPushMessage}
+                            onChange={(e) => setTestPushMessage(e.target.value)}
+                            className="w-full bg-[#141416] border border-[#27272A] rounded-lg p-1.5 text-[11px] text-white focus:outline-none focus:border-[#C5A059]"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] text-zinc-500 font-mono block mb-0.5">File Content Payload (JSON / Plain text)</label>
+                        <textarea
+                          rows={4}
+                          value={testPushContent}
+                          onChange={(e) => setTestPushContent(e.target.value)}
+                          className="w-full bg-[#141416] border border-[#27272A] rounded-lg p-2 text-[10px] text-white focus:outline-none focus:border-[#C5A059] font-mono resize-none leading-normal"
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleTestPush}
+                        disabled={testPushLoading}
+                        className="w-full py-2 bg-[#C5A059] hover:bg-[#C5A059]/90 disabled:bg-zinc-800 disabled:text-zinc-500 text-[#0A0A0B] rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98]"
+                      >
+                        {testPushLoading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Committing backup payload...</span>
+                          </>
+                        ) : (
+                          <>
+                            <GitCommit className="w-3.5 h-3.5" />
+                            <span>Commit Telemetry Backup File</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {/* CREATE REPO MODAL DIALOG */}
+      <AnimatePresence>
+        {showCreateRepoModal && (
+          <div className="fixed inset-0 bg-[#000]/70 flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#141416] border border-[#27272A] p-5 rounded-2xl w-full max-w-sm shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-[#27272A] pb-2">
+                <span className="font-bold text-white text-sm flex items-center gap-1.5 font-sans">
+                  <FolderPlus className="w-4 h-4 text-[#C5A059]" />
+                  Create GitHub Repository
+                </span>
+                <button 
+                  onClick={() => setShowCreateRepoModal(false)}
+                  className="text-zinc-500 hover:text-white font-bold cursor-pointer text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateRepo} className="space-y-3.5 text-xs text-left">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 font-mono block">Repository Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. crm-marketing-vault"
+                    value={newRepoName}
+                    onChange={(e) => setNewRepoName(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                    className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-lg p-2 text-white focus:outline-none focus:border-[#C5A059] font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 font-mono block">Description (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="E.g. System telemetry backups and generated email assets"
+                    value={newRepoDesc}
+                    onChange={(e) => setNewRepoDesc(e.target.value)}
+                    className="w-full bg-[#0A0A0B] border border-[#27272A] rounded-lg p-2 text-white focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 py-1">
+                  <input
+                    type="checkbox"
+                    id="newRepoPrivate"
+                    checked={newRepoPrivate}
+                    onChange={(e) => setNewRepoPrivate(e.target.checked)}
+                    className="rounded bg-[#0A0A0B] border-[#27272A] text-[#C5A059] focus:ring-[#C5A059] focus:ring-offset-[#141416]"
+                  />
+                  <label htmlFor="newRepoPrivate" className="text-[11px] text-[#A1A1AA] cursor-pointer font-sans select-none">
+                    Make this repository Private (🔒)
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2.5 pt-2 border-t border-[#27272A]/80">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateRepoModal(false)}
+                    className="px-3.5 py-1.5 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 font-bold rounded-lg uppercase text-[10px]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createRepoLoading || !newRepoName}
+                    className="px-3.5 py-1.5 bg-[#C5A059] text-[#0A0A0B] font-extrabold rounded-lg uppercase text-[10px] flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {createRepoLoading ? (
+                      <>
+                        <Loader2 className="w-3 animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <span>Create Repository</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* 4. DANGER ZONE */}
       {(currentUser.plan === "monthly" || currentUser.plan === "yearly") && (

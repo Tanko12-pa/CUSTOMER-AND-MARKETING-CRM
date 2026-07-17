@@ -366,6 +366,8 @@ let mockCampaigns = [
     conversations: 310,
     revenueGenerated: 62000,
     revenueTargetGoal: 70000,
+    openRate: 34.2,
+    ctr: 5.6,
   },
   {
     campaign_id: "camp_2",
@@ -377,6 +379,8 @@ let mockCampaigns = [
     conversations: 520,
     revenueGenerated: 185000,
     revenueTargetGoal: 200000,
+    openRate: 42.1,
+    ctr: 7.8,
   },
   {
     campaign_id: "camp_3",
@@ -388,6 +392,8 @@ let mockCampaigns = [
     conversations: 0,
     revenueGenerated: 0,
     revenueTargetGoal: 10000,
+    openRate: 0,
+    ctr: 0,
   }
 ];
 
@@ -500,7 +506,29 @@ let currentUserSession: CRMUser | null = null;
 
 // User verification helper for unlimited un-gated CRM access
 function checkUserAccess(user: CRMUser): { active: boolean; reason: string; trialDaysLeft: number } {
-  return { active: true, reason: "Unlimited Standard Access", trialDaysLeft: 0 };
+  const isSubscriber = user.subscriptionActive || user.plan === "monthly" || user.plan === "yearly" || user.plan === "standard";
+  if (isSubscriber) {
+    return { active: true, reason: "Active Premium Subscriber", trialDaysLeft: 0 };
+  }
+  
+  if (user.plan === "none") {
+    return { active: false, reason: "Account has no active subscription plan", trialDaysLeft: 0 };
+  }
+
+  // Calculate trial expiration (7 days from trialStartDate)
+  const startMs = user.trialStartDate ? new Date(user.trialStartDate).getTime() : Date.now();
+  const durationMs = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+  const expiresMs = startMs + durationMs;
+  const nowMs = Date.now();
+  
+  const trialDaysLeft = Math.max(0, (expiresMs - nowMs) / (1000 * 3600 * 24));
+  const active = nowMs <= expiresMs;
+  
+  return {
+    active,
+    reason: active ? `Trial active with ${Math.ceil(trialDaysLeft)} days left` : "Trial expired",
+    trialDaysLeft
+  };
 }
 
 // API endpoint to retrieve current session details
@@ -513,9 +541,9 @@ app.get("/api/auth/session", (req, res) => {
     loggedIn: true,
     user: {
       ...currentUserSession,
-      active: true,
-      reason: "Unlimited Standard Access",
-      trialDaysLeft: 0
+      active: diagnostic.active,
+      reason: diagnostic.reason,
+      trialDaysLeft: diagnostic.trialDaysLeft
     }
   });
 });
@@ -540,8 +568,8 @@ app.post("/api/auth/register-trial", (req, res) => {
         name: name.trim(),
         email: cleanEmail,
         trialStartDate: new Date().toISOString(),
-        plan: "standard",
-        subscriptionActive: true
+        plan: "trial",
+        subscriptionActive: false
       };
       mockUsersList.push(newUser);
       currentUserSession = newUser;
@@ -554,13 +582,14 @@ app.post("/api/auth/register-trial", (req, res) => {
 
     addAudit("USER_REGISTERED", "users", `User registered & signed in: ${email}`);
 
+    const diagnostic = checkUserAccess(currentUserSession);
     res.json({
       success: true,
       user: {
         ...currentUserSession,
-        active: true,
-        reason: "Unlimited Standard Access",
-        trialDaysLeft: 0
+        active: diagnostic.active,
+        reason: diagnostic.reason,
+        trialDaysLeft: diagnostic.trialDaysLeft
       }
     });
   } catch (error: any) {
@@ -586,13 +615,14 @@ app.post("/api/auth/login", (req, res) => {
     currentUserSession = user;
     addAudit("USER_LOGGED_IN", "users", `User signed in: ${email}`);
 
+    const diagnostic = checkUserAccess(user);
     res.json({
       success: true,
       user: {
         ...user,
-        active: true,
-        reason: "Unlimited Standard Access",
-        trialDaysLeft: 0
+        active: diagnostic.active,
+        reason: diagnostic.reason,
+        trialDaysLeft: diagnostic.trialDaysLeft
       }
     });
   } catch (error: any) {
@@ -606,45 +636,89 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 // Dynamic subscription activation (Empty placeholders for compatibility if hit)
-app.post("/api/auth/confirm-subscription", (req, res) => {
-  const { email } = req.body;
-  const cleanEmail = email ? email.trim().toLowerCase() : "";
-  res.json({
-    success: true,
-    user: {
-      email: cleanEmail,
-      name: "CRM Operator",
-      active: true,
-      reason: "Unlimited Standard Access",
-      trialDaysLeft: 0
+app.post("/api/auth/confirm-subscription", async (req, res) => {
+  try {
+    const { email, plan } = req.body;
+    if (!email || !plan) {
+      return res.status(400).json({ success: false, error: "Email and plan are required" });
     }
-  });
+    const cleanEmail = email.trim().toLowerCase();
+    let userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === cleanEmail);
+    
+    if (userIndex !== -1) {
+      mockUsersList[userIndex].plan = plan;
+      mockUsersList[userIndex].subscriptionActive = true;
+      mockUsersList[userIndex].subscriptionStartDate = new Date().toISOString();
+      currentUserSession = mockUsersList[userIndex];
+      if (db) {
+        await setDoc(doc(db, "users", cleanEmail), { plan, hasActiveSubscription: true }, { merge: true });
+      }
+      addAudit("SUBSCRIPTION_SUCCESS", "users", `User subscription confirmed: ${cleanEmail} upgraded to plan ${plan}`);
+      res.json({ success: true, user: mockUsersList[userIndex] });
+    } else {
+      const newUser: CRMUser = {
+        email: cleanEmail,
+        name: email.split("@")[0],
+        plan: plan,
+        subscriptionActive: true,
+        subscriptionStartDate: new Date().toISOString(),
+        trialStartDate: new Date().toISOString()
+      };
+      mockUsersList.push(newUser);
+      currentUserSession = newUser;
+      if (db) {
+        await setDoc(doc(db, "users", cleanEmail), { name: newUser.name, email: cleanEmail, plan, hasActiveSubscription: true, trialStartDate: newUser.trialStartDate }, { merge: true });
+      }
+      addAudit("SUBSCRIPTION_SUCCESS", "users", `User subscription created & confirmed: ${cleanEmail} upgraded to plan ${plan}`);
+      res.json({ success: true, user: newUser });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // Endpoint to simulate expiration - deprecated and bypassed
-app.post("/api/auth/simulate-expiration", (req, res) => {
-  res.json({
-    success: true,
-    user: {
-      ...currentUserSession,
-      active: true,
-      reason: "Unlimited Standard Access",
-      trialDaysLeft: 0
+app.post("/api/auth/simulate-expiration", async (req, res) => {
+  try {
+    if (currentUserSession) {
+      currentUserSession.plan = "none";
+      currentUserSession.subscriptionActive = false;
+      currentUserSession.trialStartDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(); // Expired 3 days ago
+      
+      const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === currentUserSession!.email.toLowerCase());
+      if (userIndex !== -1) {
+        mockUsersList[userIndex] = currentUserSession;
+      }
+      if (db) {
+        await setDoc(doc(db, "users", currentUserSession.email.toLowerCase()), { plan: "none", hasActiveSubscription: false, trialExpiresAt: Date.now() - 24 * 3600 * 1000 }, { merge: true });
+      }
     }
-  });
+    res.json({ success: true, user: currentUserSession });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // Restore trial - deprecated and bypassed
-app.post("/api/auth/simulate-restore-trial", (req, res) => {
-  res.json({
-    success: true,
-    user: {
-      ...currentUserSession,
-      active: true,
-      reason: "Unlimited Standard Access",
-      trialDaysLeft: 0
+app.post("/api/auth/simulate-restore-trial", async (req, res) => {
+  try {
+    if (currentUserSession) {
+      currentUserSession.plan = "trial";
+      currentUserSession.subscriptionActive = false;
+      currentUserSession.trialStartDate = new Date().toISOString();
+      
+      const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === currentUserSession!.email.toLowerCase());
+      if (userIndex !== -1) {
+        mockUsersList[userIndex] = currentUserSession;
+      }
+      if (db) {
+        await setDoc(doc(db, "users", currentUserSession.email.toLowerCase()), { plan: "trial", hasActiveSubscription: false, trialExpiresAt: Date.now() + 7 * 24 * 3600 * 1000 }, { merge: true });
+      }
     }
-  });
+    res.json({ success: true, user: currentUserSession });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // Create standard Stripe checkout session OR redirect to mockup completion callbacks
@@ -956,6 +1030,8 @@ app.post("/api/update-state", async (req, res) => {
         mockCampaigns[idx].clicks += 150;
         mockCampaigns[idx].conversations += 20;
         mockCampaigns[idx].revenueGenerated += 5000;
+        mockCampaigns[idx].openRate = Number((28.5 + Math.random() * 12.0).toFixed(1));
+        mockCampaigns[idx].ctr = Number((4.1 + Math.random() * 3.5).toFixed(1));
         
         const goal = mockCampaigns[idx].revenueTargetGoal || (mockCampaigns[idx].budget * 2.5);
         if (mockCampaigns[idx].revenueGenerated >= goal) {
@@ -975,6 +1051,8 @@ app.post("/api/update-state", async (req, res) => {
         mockCampaigns[idx].clicks += 75;
         mockCampaigns[idx].conversations += 12;
         mockCampaigns[idx].revenueGenerated += 5000;
+        mockCampaigns[idx].openRate = Math.min(Number(((mockCampaigns[idx].openRate || 25) + 1.2 + Math.random() * 0.8).toFixed(1)), 100);
+        mockCampaigns[idx].ctr = Math.min(Number(((mockCampaigns[idx].ctr || 3.5) + 0.3 + Math.random() * 0.4).toFixed(1)), 100);
         
         const goal = mockCampaigns[idx].revenueTargetGoal || (mockCampaigns[idx].budget * 2.5);
         if (mockCampaigns[idx].revenueGenerated >= goal) {
@@ -999,7 +1077,9 @@ app.post("/api/update-state", async (req, res) => {
         clicks: 0,
         conversations: 0,
         revenueGenerated: 0,
-        revenueTargetGoal: Number(payload.revenueTargetGoal) || (budgetVal * 2.5)
+        revenueTargetGoal: Number(payload.revenueTargetGoal) || (budgetVal * 2.5),
+        openRate: 0,
+        ctr: 0
       };
       mockCampaigns.push(newCamp);
       if (db) {
@@ -1310,6 +1390,254 @@ app.post("/api/gemini/campaign-builder", async (req, res) => {
     
     const result = JSON.parse(response.text || "{}");
     res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/gemini/funnel-automator", async (req, res) => {
+  try {
+    const { productName, targetAudience, campaignOffer, creativeTone, funnelType, useSearch } = req.body;
+    
+    const name = productName || "Enterprise Workspace Solution";
+    const audience = targetAudience || "High-Value Decision Makers";
+    const offer = campaignOffer || "Gated 30-Day Dev Trial License";
+    const tone = creativeTone || "Professional";
+    const typeSelected = funnelType || "Lead Magnet Funnel";
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+      const mockResult = {
+        trafficEngine: {
+          adsHeadlines: [
+            `🚀 Modern CRM Automation - 30-Day Evaluation`,
+            `💡 High-Performance CRM for ${audience}`,
+            `⚡ Scale with compliance: Custom ${name}`
+          ],
+          adsDescriptions: [
+            `Power up your workflow with ${name}, designed for teams supporting ${audience}. Get automated campaign workflows instantly!`,
+            `Maximize conversions. Reduce API transaction delays. Try our specialized ${typeSelected} campaign offer: ${offer}.`
+          ],
+          socialPosts: {
+            twitter: `Are you managing high-touch pipelines for ${audience}? Learn how our central ${name} automates landing pages, copy variations, and email nurturing sequences. #growth #marketing`,
+            linkedin: `How do search-lead teams automate campaigns without losing tone precision? With the ${name} workspace. We have tailored specific triggers for the ${audience} segment. Check it out today.`,
+            facebook: `Go beyond boring CRMs. Integrate ${name} with real-time analytics to track and convert your leads automatically. Try the ${offer} now!`
+          },
+          videoCreative: {
+            title: `Veo Video Promo: ${name}`,
+            veoScript: `[SCENE 1: Visual of an empty developer sandbox workspace. Deep ambient synth tracks playing.]\nVoiceover (Kore): "Struggling with multi-touch pipeline leakage? Meet ${name}."\n[SCENE 2: Fast-cut collage of elegant code editing, live telemetry monitors, and custom dashboard charts.]\nVoiceover: "The central intelligence brain that scores, segments, and nurtures prospects in real-time."\n[SCENE 3: Logo screen showing 'Secured Workspace' and active evaluation labels.]\nVoiceover: "Click now to claim your ${offer} in Google AI Studio."`,
+            visualStoryboard: `Frame 1: Extreme close-up of user selecting CRM dashboard filters. Focus on the responsive 78% conversion velocity indicator.\nFrame 2: Over-the-shoulder view of a manager viewing the interactive D3 pie chart. A notification chime sounds as a SQL lead completes a qualification quiz.\nFrame 3: Clean sleek splash screen with interactive logo: 'Start 30-Day Evaluation Now'.`
+          },
+          seoOutline: `### SEO Content Guide for ${name}\n- **Target Keyword**: Automated CRM funnels for ${audience}\n- **Suggested URL**: /blog/automate-marketing-funnels-with-${name.toLowerCase().replace(/\s+/g, '-')}\n- **Meta Title**: How to Automate Funnels with ${name} | CRM Analytics\n- **Introduction Outline**: Introduce why standard CRM platforms fail to bridge paid ads to lead capture. Detail ${typeSelected} methodology.\n- **Subheading 1**: Understanding ${audience} Behavior\n- **Subheading 2**: Setting Lead-Scoring Rules for ${offer}\n- **Call-To-Action**: Download the full interactive quiz framework.`
+        },
+        leadCapture: {
+          landingPageCopy: {
+            headline: `Empower Your Revenue Team with ${name}`,
+            subheading: `The multi-touch CRM workspace meticulously designed to turn cold clicks into customer accounts. Customized for ${audience}.`,
+            valueProps: [
+              `Instant qualification matching and database scoring`,
+              `Seamless real-time Google Grounding support`,
+              `SOC2 Level Compliance validation out-of-the-box`
+            ],
+            faqs: [
+              { q: `What is included in the ${offer}?`, a: `You get full access to the AI sandbox console, customer logs telemetry, and daily digests with custom trigger capabilities.` },
+              { q: `Is it compatible with Firebase and Postgres?`, a: `Yes, has natively responsive syncing for high-fidelity offline fallbacks and active cloud databases.` }
+            ],
+            cta: `Claim Your ${offer} Now`
+          },
+          chatbotScript: {
+            greeting: `Hello! I am your central ${name} qualification bot. Are you exploring custom setups for yourself or your team?`,
+            questions: [
+              `What is your typical monthly ad budget for targeting ${audience}?`,
+              `Are you currently storing leads in Firebase or secondary Google Sheets?`,
+              `Would you like to auto-apply our customized: ${offer}?`
+            ],
+            scoreRouting: `IF budget > $5,000 AND Lead answers Yes to auto-apply -> Route to HIGH-PRIORITY MQL pipeline (leadScore +35).\nELSE -> Route to default nurturing sequence (leadScore +10).`
+          },
+          quizSchema: {
+            title: `Determine Your CRM Automation Maturity Index`,
+            questions: [
+              { questionText: `How do you rate your current ${typeSelected} performance?`, optionsList: [`Excellent (No manual work)`, `Moderate (We write copy manually)`, `Low (No structured sequence)`] },
+              { questionText: `How are you scoring leads from your ads?`, optionsList: [`Standard rules`, `We use AI or predictive scoreboards`, `No clear metrics`] }
+            ]
+          }
+        },
+        nurtureEngine: {
+          emailSequence: [
+            { subject: `📬 Day 1: Access Granted // Your ${offer}`, body: `Hello Operator,\n\nWelcome back. Your access to ${name} has been provisioned. We hope you leverage this specialized solution for targeting ${audience} with a robust ${tone} tone.\n\nEnjoy,\nCRM Support Team`, delay: "Immediate" },
+            { subject: `📊 Day 3: Stop Losing Lead Momentum`, body: `Did you know that teams utilizing our specialized ${typeSelected} experience a 50% decrease in manual tracking delays? Let's check how your lead score dashboard is performing.`, delay: "2 Days Later" },
+            { subject: `🕒 Day 5: Final reminder regarding your evaluation`, body: `Don't miss the chance of locking in your enterprise SLA. We are offering a limited session-extension. Just click reply to coordinate a custom workspace preview!`, delay: "4 Days Later" }
+          ],
+          smsFollowups: [
+            `💬 SMS: Hello from ${name}! Your special offer (${offer}) is active. Click here to check active telemetry.`,
+            `⏰ SMS Reminder: Your evaluation period ends in 48 hours. Secure your workspace now!`
+          ],
+          scoringLogic: `#### Unified Marketing to Sales Handoff Trigger Protocol\n1. User visits landing page: +5 leadScore\n2. User completes the CRM maturity quiz: +20 leadScore\n3. Conversational chatbot validates budget > target threshold: Promote node to SQL stage and alert assignee rep Danielle Gold.`
+        },
+        optimizationEngine: {
+          abTests: [
+            { name: "Benefit-Led vs Urgency-Led Headers", hypothesis: `A benefit focus explaining low-latency telemetry will increase opt-ins by 18% compared to trial countdown deadlines.`, metric: "Conversion rate on lead opt-in form" },
+            { name: "Two-Step Option Quiz vs One-Shot CTA", hypothesis: `Chunking qualification questions into an interactive quiz yields 25% richer CRM metadata profiles.`, metric: "Lead form submission rate" }
+          ],
+          seoAudit: `#### SEO On-Page Optimization Recommendations\n- **Target Title Length**: 58 characters\n- **Current H1**: Setup your funnel copy with ${name}\n- **Missing Alt Tags**: Ensure all illustration elements in the landing page feature highly descriptive referrerPolicy keywords.\n- **Internal Links**: Add clear link routing pointing customer support FAQs back to the billing license page.`,
+          analyticsSimulatorRules: `#### Funnel Simulation Telemetry Rules\n- Baseline Click-Through Rate: 4.2% on Google Search Ads\n- Chatbot Completion Rate: 65% on entry trigger\n- SQL Conversion Probability: 15% following automated follow-ups`
+        }
+      };
+      return res.json(mockResult);
+    }
+    
+    const ai = getGeminiClient();
+    const systemPrompt = `You are a world-class growth expert and funnel architect. Given a product outline, target niche, offer, tone, and campaign style, you generate content assets for each funnel stage.
+Ensure all outputs are perfectly tailored to the requested inputs.
+Your response MUST be valid JSON strictly matching the defined responseSchema properties. Do not include markdown wraps around the JSON in your response. Ensure all text outputs are complete and polished.`;
+
+    const prompt = `Construct an automated marketing funnel using the central brain of Google AI Studio:
+Product Name: ${name}
+Target Audience Segment: ${audience}
+Core Offer / Incentive: ${offer}
+Tone of Voice: ${tone}
+Funnel Type Model: ${typeSelected}
+Use search grounding context if requested: ${useSearch ? "Yes" : "No"}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: systemPrompt,
+        tools: useSearch ? [{ googleSearch: {} }] : undefined,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            trafficEngine: {
+              type: Type.OBJECT,
+              properties: {
+                adsHeadlines: { type: Type.ARRAY, items: { type: Type.STRING } },
+                adsDescriptions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                socialPosts: {
+                  type: Type.OBJECT,
+                  properties: {
+                    twitter: { type: Type.STRING },
+                    linkedin: { type: Type.STRING },
+                    facebook: { type: Type.STRING }
+                  },
+                  required: ["twitter", "linkedin", "facebook"]
+                },
+                videoCreative: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    veoScript: { type: Type.STRING },
+                    visualStoryboard: { type: Type.STRING }
+                  },
+                  required: ["title", "veoScript", "visualStoryboard"]
+                },
+                seoOutline: { type: Type.STRING }
+              },
+              required: ["adsHeadlines", "adsDescriptions", "socialPosts", "videoCreative", "seoOutline"]
+            },
+            leadCapture: {
+              type: Type.OBJECT,
+              properties: {
+                landingPageCopy: {
+                  type: Type.OBJECT,
+                  properties: {
+                    headline: { type: Type.STRING },
+                    subheading: { type: Type.STRING },
+                    valueProps: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    faqs: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          q: { type: Type.STRING },
+                          a: { type: Type.STRING }
+                        },
+                        required: ["q", "a"]
+                      }
+                    },
+                    cta: { type: Type.STRING }
+                  },
+                  required: ["headline", "subheading", "valueProps", "faqs", "cta"]
+                },
+                chatbotScript: {
+                  type: Type.OBJECT,
+                  properties: {
+                    greeting: { type: Type.STRING },
+                    questions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    scoreRouting: { type: Type.STRING }
+                  },
+                  required: ["greeting", "questions", "scoreRouting"]
+                },
+                quizSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    questions: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          questionText: { type: Type.STRING },
+                          optionsList: { type: Type.ARRAY, items: { type: Type.STRING } }
+                        },
+                        required: ["questionText", "optionsList"]
+                      }
+                    }
+                  },
+                  required: ["title", "questions"]
+                }
+              },
+              required: ["landingPageCopy", "chatbotScript", "quizSchema"]
+            },
+            nurtureEngine: {
+              type: Type.OBJECT,
+              properties: {
+                emailSequence: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      subject: { type: Type.STRING },
+                      body: { type: Type.STRING },
+                      delay: { type: Type.STRING }
+                    },
+                    required: ["subject", "body", "delay"]
+                  }
+                },
+                smsFollowups: { type: Type.ARRAY, items: { type: Type.STRING } },
+                scoringLogic: { type: Type.STRING }
+              },
+              required: ["emailSequence", "smsFollowups", "scoringLogic"]
+            },
+            optimizationEngine: {
+              type: Type.OBJECT,
+              properties: {
+                abTests: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      hypothesis: { type: Type.STRING },
+                      metric: { type: Type.STRING }
+                    },
+                    required: ["name", "hypothesis", "metric"]
+                  }
+                },
+                seoAudit: { type: Type.STRING },
+                analyticsSimulatorRules: { type: Type.STRING }
+              },
+              required: ["abTests", "seoAudit", "analyticsSimulatorRules"]
+            }
+          },
+          required: ["trafficEngine", "leadCapture", "nurtureEngine", "optimizationEngine"]
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+    res.json(parsed);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -2318,11 +2646,17 @@ async function syncFirestoreData() {
 
 // --- 3. UNLOCKED CRM ENDPOINT (REPLACED AS REQUESTED) ---
 app.post('/api/generate-content', async (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, userId } = req.body;
 
   try {
+    if (userId) {
+      const isSubscribed = await checkUserSubscriptionStatus(userId);
+      if (!isSubscribed) {
+        return res.status(403).json({ error: "Access Denied. Active subscription required to access premium CRM agents." });
+      }
+    }
+
     const ai = getGeminiClient();
-    // Subscription block entirely bypassed; access is instantly granted
     const response = await ai.models.generateContent({
       model: 'gemini-3.5-flash',
       contents: prompt,
@@ -2332,6 +2666,515 @@ app.post('/api/generate-content', async (req, res) => {
   } catch (error) {
     console.error("Gemini API Error:", error);
     res.status(500).json({ error: "Failed to generate content." });
+  }
+});
+
+// --- GITHUB INTEGRATION ENDPOINTS ---
+
+interface GitHubTokenData {
+  token: string;
+  username: string;
+  avatarUrl: string;
+  scopes: string[];
+  connectedAt: string;
+}
+
+const githubTokens: { [email: string]: GitHubTokenData } = {};
+const mockCreatedRepos: { [email: string]: Array<{ name: string; description: string; private: boolean; html_url: string }> } = {};
+
+// 1. Get auth URL
+app.get('/api/auth/github/url', (req, res) => {
+  const email = (req.query.email as string || "").trim().toLowerCase();
+  const origin = req.query.origin || req.headers.origin || "http://localhost:3000";
+  
+  if (!email) {
+    return res.status(400).json({ error: "Email parameter is required to initiate connection" });
+  }
+
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+  const redirectUri = `${origin}/api/auth/github/callback`;
+
+  const stateObj = { email, origin };
+  const encodedState = Buffer.from(JSON.stringify(stateObj)).toString("base64");
+
+  if (!clientId || !clientSecret || clientId.trim() === "" || clientSecret.trim() === "") {
+    // Missing credentials - redirect to mock simulator
+    const simUrl = `${origin}/api/auth/github/simulate?state=${encodedState}`;
+    return res.json({ simulated: true, url: simUrl });
+  }
+
+  // Real OAuth URL
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo,write:repo_hook,public_repo&state=${encodedState}`;
+  res.json({ simulated: false, url: authUrl });
+});
+
+// 2. Simulated consent screen
+app.get('/api/auth/github/simulate', (req, res) => {
+  const { state } = req.query;
+  res.send(`
+    <html>
+      <head>
+        <title>Authorize CRM-Automation-Engine</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <style>
+          body { font-family: 'Inter', sans-serif; }
+        </style>
+      </head>
+      <body class="bg-[#0d1117] text-[#c9d1d9] min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-[#161b22] border border-[#30363d] rounded-lg p-6 shadow-xl space-y-6">
+          <div class="text-center space-y-2">
+            <div class="flex justify-center items-center gap-4">
+              <span class="text-3xl">🤖</span>
+              <span class="text-2xl text-[#8b949e]">⚡</span>
+              <svg class="w-10 h-10 text-white fill-current" viewBox="0 0 16 16" version="1.1" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+            </div>
+            <h1 class="text-xl font-bold text-white mt-4 font-sans">Authorize CRM-Automation-Engine</h1>
+            <p class="text-xs text-[#8b949e]">by <span class="text-white">Akindewum</span> wants to access your GitHub account</p>
+          </div>
+          <hr class="border-[#30363d]" />
+          
+          <div class="space-y-4">
+            <p class="text-xs text-[#8b949e] font-semibold uppercase tracking-wider">Requested Permissions (Full Write Access):</p>
+            <div class="space-y-3">
+              <div class="flex gap-3 text-sm">
+                <span class="text-[#3fb950] text-lg shrink-0">✓</span>
+                <div>
+                  <strong class="text-white block">Full repository control (repo, public_repo)</strong>
+                  <span class="text-xs text-[#8b949e]">Grant read and write access to code, commit status, repository hooks, and collaborator access for public and private repositories.</span>
+                </div>
+              </div>
+              <div class="flex gap-3 text-sm">
+                <span class="text-[#3fb950] text-lg shrink-0">✓</span>
+                <div>
+                  <strong class="text-white block">Write repository hooks (write:repo_hook)</strong>
+                  <span class="text-xs text-[#8b949e]">Create and modify webhooks on your behalf to notify CRM channels of git push events.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-[#0d1117] p-3 rounded text-[11px] border border-[#30363d] space-y-1 font-mono">
+            <div class="text-[#8b949e]">Redirecting to:</div>
+            <div class="text-[#58a6ff] truncate">/api/auth/github/callback</div>
+          </div>
+          
+          <div class="flex gap-3 pt-2">
+            <button onclick="window.close()" class="flex-1 py-2 px-4 rounded-md border border-[#30363d] text-sm font-medium hover:bg-[#21262d] transition-colors">Cancel</button>
+            <button onclick="authorize()" class="flex-1 py-2 px-4 rounded-md bg-[#238636] text-white text-sm font-semibold hover:bg-[#2ea043] transition-colors shadow">Grant Permissions</button>
+          </div>
+        </div>
+        
+        <script>
+          function authorize() {
+            const params = new URLSearchParams(window.location.search);
+            const state = params.get('state');
+            window.location.href = '/api/auth/github/callback?code=mock_oauth_code_123&state=' + encodeURIComponent(state || '');
+          }
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+// 3. Callback URL
+app.get('/api/auth/github/callback', async (req, res) => {
+  const { code, state } = req.query;
+  if (!code) {
+    return res.status(400).send("Authorization code is missing");
+  }
+
+  let userEmail = "anonymous";
+  let origin = "";
+  try {
+    if (state) {
+      const decoded = JSON.parse(Buffer.from(state as string, "base64").toString("utf-8"));
+      userEmail = decoded.email || "anonymous";
+      origin = decoded.origin || "";
+    }
+  } catch (e) {
+    console.error("Failed to parse OAuth state:", e);
+  }
+
+  let accessToken = "";
+  let errorMsg = "";
+  let githubUser: any = null;
+
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+  if (code === "mock_oauth_code_123" || !clientId || !clientSecret || clientId.trim() === "" || clientSecret.trim() === "") {
+    // Handle mockup simulation login
+    accessToken = "mock_github_access_token_abc123xyz";
+    githubUser = {
+      login: "sandbox-developer",
+      avatar_url: "https://avatars.githubusercontent.com/u/9919?v=4" // GitHub Octocat logo!
+    };
+  } else {
+    // Real oauth code exchange
+    try {
+      const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          state
+        })
+      });
+      const tokenData = await tokenResponse.json() as any;
+      if (tokenData.access_token) {
+        accessToken = tokenData.access_token;
+      } else {
+        errorMsg = tokenData.error_description || tokenData.error || "Failed to exchange token";
+      }
+    } catch (err: any) {
+      errorMsg = err.message || "Failed to fetch access token";
+    }
+
+    if (accessToken) {
+      try {
+        const userProfileResponse = await fetch("https://api.github.com/user", {
+          headers: {
+            "Authorization": `token ${accessToken}`,
+            "User-Agent": "CRM-Automation-App"
+          }
+        });
+        if (userProfileResponse.ok) {
+          githubUser = await userProfileResponse.json();
+        } else {
+          errorMsg = "Failed to fetch user profile from GitHub API";
+        }
+      } catch (err: any) {
+        errorMsg = err.message || "Connection error retrieving profile";
+      }
+    }
+  }
+
+  const success = !!accessToken && !!githubUser;
+  if (success && githubUser) {
+    const githubData: GitHubTokenData = {
+      token: accessToken,
+      username: githubUser.login,
+      avatarUrl: githubUser.avatar_url,
+      scopes: ["repo", "write:repo_hook", "public_repo"],
+      connectedAt: new Date().toISOString()
+    };
+    githubTokens[userEmail.toLowerCase()] = githubData;
+    if (db) {
+      await setDoc(doc(db, "users", userEmail.toLowerCase()), { github: githubData }, { merge: true });
+    }
+    addAudit("GITHUB_CONNECTED", "users", `Connected GitHub account: ${githubUser.login} for operator ${userEmail}`);
+  }
+
+  // Render popup response script to close popup and notify page
+  res.send(`
+    <html>
+      <body>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({ 
+              type: 'GITHUB_OAUTH_SUCCESS', 
+              success: ${success}, 
+              error: "${errorMsg}" 
+            }, '*');
+            window.close();
+          } else {
+            window.location.href = '/';
+          }
+        </script>
+        <p>GitHub authorization complete. This window should close automatically.</p>
+      </body>
+    </html>
+  `);
+});
+
+// 4. Get connected profile
+app.get('/api/github/profile', async (req, res) => {
+  const email = (req.query.email as string || "").trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  if (githubTokens[email]) {
+    return res.json({ connected: true, ...githubTokens[email] });
+  }
+
+  if (db) {
+    try {
+      const userSnap = await getDoc(doc(db, "users", email));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.github) {
+          githubTokens[email] = userData.github;
+          return res.json({ connected: true, ...userData.github });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch github from Firestore:", err);
+    }
+  }
+
+  res.json({ connected: false });
+});
+
+// 5. Disconnect GitHub
+app.post('/api/github/disconnect', async (req, res) => {
+  const email = (req.body.email as string || "").trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  delete githubTokens[email];
+  if (db) {
+    try {
+      await setDoc(doc(db, "users", email), { github: null }, { merge: true });
+    } catch (err) {
+      console.error("Failed to remove github in Firestore:", err);
+    }
+  }
+
+  addAudit("GITHUB_DISCONNECTED", "users", `Disconnected GitHub account for operator ${email}`);
+  res.json({ success: true });
+});
+
+// 6. Get repositories
+app.get('/api/github/repos', async (req, res) => {
+  const email = (req.query.email as string || "").trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  let connection = githubTokens[email];
+  if (!connection && db) {
+    try {
+      const userSnap = await getDoc(doc(db, "users", email));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.github) {
+          githubTokens[email] = userData.github;
+          connection = userData.github;
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (!connection) {
+    return res.status(401).json({ error: "GitHub account not connected" });
+  }
+
+  const isMock = connection.token.startsWith("mock_");
+  if (isMock) {
+    const list = [
+      { name: "customer-marketing-campaigns", description: "Storage for AI generated CRM campaigns and drafts", private: false, html_url: `https://github.com/${connection.username}/customer-marketing-campaigns` },
+      { name: "telemetry-leads-backup", description: "Weekly backups of marketing automation segments", private: true, html_url: `https://github.com/${connection.username}/telemetry-leads-backup` },
+      ...(mockCreatedRepos[email] || [])
+    ];
+    return res.json({ repos: list });
+  }
+
+  try {
+    const reposResponse = await fetch("https://api.github.com/user/repos?type=owner&sort=updated", {
+      headers: {
+        "Authorization": `token ${connection.token}`,
+        "User-Agent": "CRM-Automation-App"
+      }
+    });
+    if (reposResponse.ok) {
+      const repos = await reposResponse.json() as any[];
+      const formatted = repos.map(r => ({
+        name: r.name,
+        description: r.description,
+        private: r.private,
+        html_url: r.html_url
+      }));
+      res.json({ repos: formatted });
+    } else {
+      res.status(reposResponse.status).json({ error: "Failed to fetch repositories from GitHub" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. Create repository
+app.post('/api/github/create-repo', async (req, res) => {
+  const { email, name, description, isPrivate } = req.body;
+  if (!email || !name) {
+    return res.status(400).json({ error: "Email and repository name are required" });
+  }
+  const cleanEmail = email.trim().toLowerCase();
+
+  let connection = githubTokens[cleanEmail];
+  if (!connection && db) {
+    try {
+      const userSnap = await getDoc(doc(db, "users", cleanEmail));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.github) {
+          githubTokens[cleanEmail] = userData.github;
+          connection = userData.github;
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (!connection) {
+    return res.status(401).json({ error: "GitHub account not connected" });
+  }
+
+  const isMock = connection.token.startsWith("mock_");
+  if (isMock) {
+    const newRepo = {
+      name: name.trim().toLowerCase().replace(/\s+/g, "-"),
+      description: description || "",
+      private: !!isPrivate,
+      html_url: `https://github.com/${connection.username}/${name.trim().toLowerCase().replace(/\s+/g, "-")}`
+    };
+    if (!mockCreatedRepos[cleanEmail]) {
+      mockCreatedRepos[cleanEmail] = [];
+    }
+    mockCreatedRepos[cleanEmail].push(newRepo);
+    addAudit("GITHUB_REPO_CREATED", "users", `Created simulated GitHub repository: ${newRepo.name}`);
+    return res.json({ success: true, repo: newRepo });
+  }
+
+  try {
+    const createResponse = await fetch("https://api.github.com/user/repos", {
+      method: "POST",
+      headers: {
+        "Authorization": `token ${connection.token}`,
+        "User-Agent": "CRM-Automation-App",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name: name.trim(),
+        description: description || "Created via Customer & Marketing CRM",
+        private: !!isPrivate,
+        auto_init: true
+      })
+    });
+
+    if (createResponse.ok) {
+      const r = await createResponse.json() as any;
+      const formatted = {
+        name: r.name,
+        description: r.description,
+        private: r.private,
+        html_url: r.html_url
+      };
+      addAudit("GITHUB_REPO_CREATED", "users", `Created GitHub repository: ${formatted.name}`);
+      res.json({ success: true, repo: formatted });
+    } else {
+      const errData = await createResponse.json() as any;
+      res.status(createResponse.status).json({ error: errData.message || "Failed to create repository" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. Push File (Write permissions!)
+app.post('/api/github/push-file', async (req, res) => {
+  const { email, repo, path: filePath, content, message } = req.body;
+  if (!email || !repo || !filePath || !content) {
+    return res.status(400).json({ error: "Missing required parameters (email, repo, path, content)" });
+  }
+  const cleanEmail = email.trim().toLowerCase();
+
+  let connection = githubTokens[cleanEmail];
+  if (!connection && db) {
+    try {
+      const userSnap = await getDoc(doc(db, "users", cleanEmail));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.github) {
+          githubTokens[cleanEmail] = userData.github;
+          connection = userData.github;
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (!connection) {
+    return res.status(401).json({ error: "GitHub account not connected" });
+  }
+
+  const isMock = connection.token.startsWith("mock_");
+  if (isMock) {
+    addAudit("GITHUB_FILE_PUSHED", "users", `Simulated write permission: successfully committed file '${filePath}' to '${repo}'`);
+    return res.json({ 
+      success: true, 
+      simulated: true,
+      commit: {
+        sha: "mock_commit_sha_88f9a0c1",
+        html_url: `https://github.com/${connection.username}/${repo}/commit/mock_commit_sha_88f9a0c1`
+      }
+    });
+  }
+
+  try {
+    const owner = connection.username;
+    // Check if file already exists to retrieve its current SHA
+    let sha: string | undefined = undefined;
+    try {
+      const existingResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`, {
+        headers: {
+          "Authorization": `token ${connection.token}`,
+          "User-Agent": "CRM-Automation-App"
+        }
+      });
+      if (existingResponse.ok) {
+        const existingData = await existingResponse.json() as any;
+        sha = existingData.sha;
+      }
+    } catch (err) {
+      // Ignore
+    }
+
+    // Push the file contents
+    const putResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `token ${connection.token}`,
+        "User-Agent": "CRM-Automation-App",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        message: message || `Committed ${filePath} from CRM engine`,
+        content: Buffer.from(content).toString("base64"),
+        sha
+      })
+    });
+
+    if (putResponse.ok) {
+      const data = await putResponse.json() as any;
+      addAudit("GITHUB_FILE_PUSHED", "users", `Successfully committed file '${filePath}' to repository '${repo}'`);
+      res.json({
+        success: true,
+        simulated: false,
+        commit: {
+          sha: data.commit?.sha || "unknown",
+          html_url: data.commit?.html_url || `https://github.com/${owner}/${repo}`
+        }
+      });
+    } else {
+      const errData = await putResponse.json() as any;
+      res.status(putResponse.status).json({ error: errData.message || "Failed to commit file to GitHub" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

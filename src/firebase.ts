@@ -17,13 +17,14 @@ import {
 } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
-const app = initializeApp(firebaseConfig);
+const config = firebaseConfig as any;
+const app = initializeApp(config);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
   })
-}, firebaseConfig.firestoreDatabaseId);
+}, config.firestoreDatabaseId);
 export const auth = getAuth();
 
 export enum OperationType {

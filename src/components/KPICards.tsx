@@ -290,6 +290,7 @@ export function KPICards({ customers, campaigns, tickets, logs = [] }: KPICardsP
 
         {/* CARD 4 */}
         <motion.div 
+          initial={{ borderColor: "rgb(39, 39, 42)" }}
           animate={riskTransitionAlerts.length > 0 ? {
             borderColor: ["rgb(39, 39, 42)", "rgb(239, 68, 68)", "rgb(39, 39, 42)"],
             boxShadow: [

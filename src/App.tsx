@@ -22,7 +22,8 @@ import {
   AlertTriangle,
   Info,
   Trash2,
-  CreditCard
+  CreditCard,
+  Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { KPICards } from "./components/KPICards";
@@ -39,6 +40,7 @@ import { SystemAuditLogs } from "./components/SystemAuditLogs";
 import { MutationsAuditFeed } from "./components/MutationsAuditFeed";
 import { AgentHub } from "./components/AgentHub";
 import { BillingManagement } from "./components/BillingManagement";
+import { FunnelAutomation } from "./components/FunnelAutomation";
 import { Customer, Campaign, SupportTicket, AuditLog } from "./types";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -161,7 +163,7 @@ const FALLBACK_AUDIT: AuditLog[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"agents" | "sales" | "marketing" | "support" | "audio" | "database" | "audit" | "billing">("agents");
+  const [activeTab, setActiveTab] = useState<"agents" | "sales" | "marketing" | "support" | "audio" | "database" | "audit" | "billing" | "funnels">("agents");
   
   // Interactive D3 Pie Chart selected filter
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
@@ -492,7 +494,7 @@ export default function App() {
               email: firebaseUser.email || "guest-operator@company.com",
               name: data.name || firebaseUser.displayName || "Guest Operator",
               uid: firebaseUser.uid,
-              trialStartDate: new Date().toISOString(),
+              trialStartDate: data.trialStartDate || new Date(trialExpiresAt - 7 * 24 * 60 * 60 * 1000).toISOString(),
               plan: userPlan,
               active: !isExpired || hasActiveSubscription,
               trialDaysLeft: trialDaysLeft,
@@ -500,25 +502,27 @@ export default function App() {
             });
           } else {
             // First time register doc sync fallback
-            const trialExpiresAt = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000; // 100 years
+            const isGuest = firebaseUser.isAnonymous || firebaseUser.email === "guest-operator@company.com" || !firebaseUser.email;
+            const trialExpiresAt = isGuest ? Date.now() + 100 * 365 * 24 * 60 * 60 * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000;
             const userData = {
               uid: firebaseUser.uid,
-              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Guest Operator",
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || (isGuest ? "Guest Operator" : "CRM Operator"),
               email: firebaseUser.email || "guest-operator@company.com",
               trialExpiresAt: trialExpiresAt,
-              hasActiveSubscription: true,
-              plan: "standard"
+              hasActiveSubscription: isGuest,
+              plan: isGuest ? "standard" : "trial",
+              trialStartDate: new Date().toISOString()
             };
             await setDoc(userRef, userData);
             setCurrentUser({
               email: userData.email,
               name: userData.name,
               uid: firebaseUser.uid,
-              trialStartDate: new Date().toISOString(),
-              plan: "standard",
+              trialStartDate: userData.trialStartDate,
+              plan: userData.plan as any,
               active: true,
-              trialDaysLeft: 0,
-              subscriptionActive: true
+              trialDaysLeft: isGuest ? 100 * 365 : 7,
+              subscriptionActive: isGuest
             });
           }
         } catch (err) {
@@ -535,6 +539,17 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Dynamic advance trial warning toast notifications on user state change
+  useEffect(() => {
+    if (currentUser && !currentUser.subscriptionActive && currentUser.active && currentUser.trialDaysLeft !== undefined) {
+      if (currentUser.trialDaysLeft <= 3) {
+        showToast(`⚠️ ADVANCE TRIAL WARNING: Only ${Math.ceil(currentUser.trialDaysLeft)} days left in your 7-day free trial. Premium access will be restricted upon expiration.`, "error");
+      } else {
+        showToast(`💡 Trial Evaluation Active: ${Math.ceil(currentUser.trialDaysLeft)} days remaining in trial.`, "info");
+      }
+    }
+  }, [currentUser?.uid, currentUser?.active, currentUser?.trialDaysLeft]);
 
   // Post changes to state server
   const handleUpdateState = async (type: string, payload: any) => {
@@ -725,18 +740,34 @@ export default function App() {
 
       {/* 7-DAY TRIAL COUNTDOWN BANNER */}
       {currentUser && !currentUser.subscriptionActive && (currentUser.plan === "trial" || (currentUser.trialDaysLeft !== undefined && currentUser.trialDaysLeft > 0 && currentUser.trialDaysLeft <= 7)) && (
-        <div className="bg-[#1A130B]/90 border-b border-[#301F0D] text-xs px-6 py-2.5 flex items-center justify-between gap-3 text-amber-200/95 font-sans relative z-10 shadow-sm animate-fade-in" id="trial-alert-scroller-banner">
+        <div className={`border-b text-xs px-6 py-2.5 flex items-center justify-between gap-3 font-sans relative z-10 shadow-sm animate-fade-in ${
+          currentUser.trialDaysLeft <= 3 
+            ? "bg-[#251010]/95 border-red-900/60 text-red-200" 
+            : "bg-[#1A130B]/90 border-[#301F0D] text-amber-200/95"
+        }`} id="trial-alert-scroller-banner">
           <div className="flex items-center space-x-2">
-            <span className="shrink-0 p-1 bg-amber-500/10 text-amber-400 rounded-md">
+            <span className={`shrink-0 p-1 rounded-md ${currentUser.trialDaysLeft <= 3 ? "bg-red-500/15 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
               <Sparkles className="w-3.5 h-3.5 animate-pulse" />
             </span>
             <span>
-              ⭐ <strong>Evaluation Period Active:</strong> You have exactly <strong className="font-mono text-amber-300">{Math.floor(currentUser.trialDaysLeft)} Days, {Math.floor((currentUser.trialDaysLeft % 1) * 24)} Hours, {Math.floor(((currentUser.trialDaysLeft % 1) * 24 % 1) * 60)} Minutes</strong> left in your 7-day free trial dashboard space. Upgrade today for uninterrupted workspace service.
+              {currentUser.trialDaysLeft <= 3 ? (
+                <>
+                  🚨 <strong>CRITICAL TRIAL EXPIRATION WARNING:</strong> Your 7-day free trial will expire in <strong className="font-mono text-red-300 font-bold">{Math.floor(currentUser.trialDaysLeft)} Days, {Math.floor((currentUser.trialDaysLeft % 1) * 24)} Hours, {Math.floor(((currentUser.trialDaysLeft % 1) * 24 % 1) * 60)} Minutes</strong>. All premium AI copilot features and CRM pipelines will be suspended soon. Complete payment now on the Subscription & Billing page to prevent service suspension.
+                </>
+              ) : (
+                <>
+                  ⭐ <strong>Evaluation Period Active:</strong> You have exactly <strong className="font-mono text-amber-300">{Math.floor(currentUser.trialDaysLeft)} Days, {Math.floor((currentUser.trialDaysLeft % 1) * 24)} Hours, {Math.floor(((currentUser.trialDaysLeft % 1) * 24 % 1) * 60)} Minutes</strong> left in your 7-day free trial dashboard space. Upgrade today for uninterrupted workspace service.
+                </>
+              )}
             </span>
           </div>
           <button
             onClick={() => setActiveTab("billing")}
-            className="bg-amber-500 hover:bg-amber-400 text-black px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono tracking-wider transition-colors cursor-pointer"
+            className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono tracking-wider transition-colors cursor-pointer ${
+              currentUser.trialDaysLeft <= 3 
+                ? "bg-red-500 hover:bg-red-400 text-white shadow-md shadow-red-500/10" 
+                : "bg-amber-500 hover:bg-amber-400 text-black"
+            }`}
           >
             Upgrade License
           </button>
@@ -889,6 +920,14 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => setActiveTab("funnels")}
+                className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "funnels" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#C5A059] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
+              >
+                <Layers className="w-4 h-4 shrink-0" />
+                <span>Automated Funnels</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab("support")}
                 className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "support" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#C5A059] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
               >
@@ -925,7 +964,7 @@ export default function App() {
                 className={`w-full text-left p-3.5 rounded-xl text-sm font-bold flex items-center space-x-3 transition-all duration-300 cursor-pointer ${activeTab === "billing" ? "bg-[#0A0A0B] border-l-4 border-[#C5A059] text-[#C5A059] shadow-md" : "bg-transparent text-[#A1A1AA] hover:bg-white/5 hover:text-[#E4E4E7]"}`}
               >
                 <CreditCard className="w-4 h-4 shrink-0 text-[#C5A059]" />
-                <span>Manage Subscription</span>
+                <span>Billing & Integrations</span>
               </button>
             </div>
           </div>
@@ -1080,6 +1119,15 @@ export default function App() {
                   <MarketingModule 
                     campaigns={campaigns} 
                     onUpdateState={handleUpdateState} 
+                    currentUser={currentUser}
+                    showToast={showToast}
+                  />
+                )}
+
+                {activeTab === "funnels" && (
+                  <FunnelAutomation 
+                    onUpdateState={handleUpdateState}
+                    userEmail={currentUser?.email}
                   />
                 )}
 

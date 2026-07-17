@@ -13,13 +13,13 @@ export default defineConfig(() => {
     },
     server: {
       hmr: {
-        // Force HMR to use standard protocol settings or specific ports if behind proxies
+        // Force the HMR client to map directly to the secure client port/protocol
         protocol: 'ws',
         host: 'localhost',
       },
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {
-        usePolling: true, // Forces file watching to work accurately in virtual environments
+      // Alternative if sandbox blocks it completely: turn off or catch client connection errors safely
+      watch: {
+        usePolling: true,
       },
       proxy: {
         '/api': {

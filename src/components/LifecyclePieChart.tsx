@@ -354,6 +354,7 @@ export function LifecyclePieChart({ customers, onSelectStage, selectedStage }: L
                   <motion.path
                     key={d.data.stage}
                     layoutId={`pie-slice-${d.data.stage}`}
+                    initial={{ opacity: 0 }}
                     d={pathD || ""}
                     fill={color}
                     stroke="#141416"

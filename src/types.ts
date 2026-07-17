@@ -89,6 +89,8 @@ export interface Campaign {
   conversations: number;
   revenueGenerated: number;
   revenueTargetGoal?: number;
+  openRate?: number;
+  ctr?: number;
 }
 
 export interface SupportTicket {

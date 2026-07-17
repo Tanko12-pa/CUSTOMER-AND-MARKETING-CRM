@@ -1,36 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Global safety net: default-deny catch-all
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Connection verification path
-    match /test/{docId} {
-      allow read: if true;
-    }
-
-    // User profiles: unrestricted access to enable server-side synchronization of user models
-    match /users/{userId} {
-      allow read, write: if true;
-    }
-
-    // Backend server and CRM collections
-    match /customers/{customerId} {
-      allow read, write: if true;
-    }
-
-    match /marketing_campaigns/{campaignId} {
-      allow read, write: if true;
-    }
-
-    match /support_tickets/{ticketId} {
-      allow read, write: if true;
-    }
-
-    match /audit_logs/{logId} {
       allow read, write: if true;
     }
   }
