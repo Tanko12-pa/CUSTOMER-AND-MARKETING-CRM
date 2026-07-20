@@ -23,7 +23,8 @@ import {
   Info,
   Trash2,
   CreditCard,
-  Layers
+  Layers,
+  Calendar
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { KPICards } from "./components/KPICards";
@@ -42,7 +43,7 @@ import { AgentHub } from "./components/AgentHub";
 import { BillingManagement } from "./components/BillingManagement";
 import { FunnelAutomation } from "./components/FunnelAutomation";
 import { Customer, Campaign, SupportTicket, AuditLog } from "./types";
-import { auth, db } from "./firebase";
+import { auth, db, connectGoogleCalendar } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -202,6 +203,52 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [useSearchGrounding, setUseSearchGrounding] = useState(false);
+  const [googleCalendarToken, setGoogleCalendarToken] = useState<string | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [fetchingCalendar, setFetchingCalendar] = useState(false);
+
+  const fetchCalendarEvents = async (token: string) => {
+    setFetchingCalendar(true);
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(
+          new Date().toISOString()
+        )}&maxResults=5`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setCalendarEvents(data.items || []);
+        showToast("Successfully fetched Google Calendar events!", "success");
+      } else {
+        console.error("Failed to fetch events from calendar", response.status);
+        showToast("Warning: Google Calendar token invalid or expired.", "error");
+        setGoogleCalendarToken(null);
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast("Error connecting to Google Calendar API.", "error");
+    } finally {
+      setFetchingCalendar(false);
+    }
+  };
+
+  const handleConnectCalendar = async () => {
+    try {
+      const token = await connectGoogleCalendar();
+      if (token) {
+        setGoogleCalendarToken(token);
+        showToast("Connected to Google Calendar!", "success");
+        await fetchCalendarEvents(token);
+      } else {
+        showToast("Google Calendar access denied or cancelled.", "error");
+      }
+    } catch (err: any) {
+      showToast(`Calendar Error: ${err.message}`, "error");
+    }
+  };
 
   const handleDownloadChatHistory = () => {
     if (chatMessages.length === 0) return;
@@ -594,7 +641,7 @@ export default function App() {
     const response = await fetch('/api/generate-content', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: userPrompt, userId })
+      body: JSON.stringify({ prompt: userPrompt, userId, googleCalendarToken })
     });
 
     if (response.status === 403) {
@@ -633,7 +680,8 @@ export default function App() {
           body: JSON.stringify({
             prompt: userMsg,
             mode: "analytics",
-            useSearch: useSearchGrounding
+            useSearch: useSearchGrounding,
+            googleCalendarToken
           })
         });
         const data = await response.json();
@@ -1008,6 +1056,107 @@ export default function App() {
               </button>
             </div>
 
+            {/* GOOGLE CALENDAR AUTHENTICATION AND EVENTS BAR */}
+            <div className="bg-[#0A0A0B] border border-[#27272A] rounded-xl p-2.5 mb-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold font-mono text-[#A1A1AA] flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-[#C5A059]" />
+                  GOOGLE CALENDAR
+                </span>
+                {googleCalendarToken ? (
+                  <span className="flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase">Connected</span>
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-mono text-amber-500 font-bold uppercase">Not Connected</span>
+                )}
+              </div>
+
+              {googleCalendarToken ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => fetchCalendarEvents(googleCalendarToken)}
+                      disabled={fetchingCalendar}
+                      className="text-[9px] font-mono text-[#C5A059] hover:underline cursor-pointer font-bold"
+                    >
+                      {fetchingCalendar ? "Refreshing..." : "🔄 Refresh Agenda"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoogleCalendarToken(null);
+                        setCalendarEvents([]);
+                        showToast("Disconnected Google Calendar", "info");
+                      }}
+                      className="text-[9px] font-mono text-red-400 hover:underline cursor-pointer font-bold"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                  {calendarEvents.length > 0 ? (
+                    <div className="max-h-[100px] overflow-y-auto space-y-1 pr-1 font-mono text-[9px] text-[#A1A1AA]">
+                      {calendarEvents.map((evt: any, idx: number) => {
+                        const start = evt.start?.dateTime || evt.start?.date || "";
+                        const formattedTime = start ? new Date(start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "All-Day";
+                        return (
+                          <div key={evt.id || idx} className="bg-[#141416] p-1.5 rounded border border-[#27272A] flex items-center justify-between gap-1">
+                            <div className="truncate flex-1">
+                              <span className="text-[#E4E4E7] font-bold block truncate" title={evt.summary || "No Title"}>
+                                {evt.summary || "No Title"}
+                              </span>
+                              <span className="opacity-60 text-[8px]">{formattedTime}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Delete calendar event "${evt.summary}"?`)) {
+                                  try {
+                                    const response = await fetch(
+                                      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${evt.id}`,
+                                      {
+                                        method: "DELETE",
+                                        headers: { Authorization: `Bearer ${googleCalendarToken}` }
+                                      }
+                                    );
+                                    if (response.ok) {
+                                      showToast("Event deleted successfully from Google Calendar", "success");
+                                      await fetchCalendarEvents(googleCalendarToken);
+                                    } else {
+                                      showToast("Failed to delete calendar event", "error");
+                                    }
+                                  } catch (err) {
+                                    showToast("Network error deleting event", "error");
+                                  }
+                                }
+                              }}
+                              className="text-red-400/60 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors cursor-pointer"
+                              title="Delete Event"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-[#71717A] italic">No upcoming events found.</p>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConnectCalendar}
+                  className="w-full py-1.5 rounded-lg bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/30 hover:bg-[#C5A059]/20 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  Authorize Google Calendar
+                </button>
+              )}
+            </div>
+
             <div className="flex-1 overflow-y-auto space-y-2.5 max-h-[220px] mb-3 text-xs pr-1 font-sans">
               {chatMessages.map((msg, i) => (
                 <div key={i} className={`p-2.5 rounded-xl leading-relaxed ${msg.sender === "gemini" ? "bg-[#0A0A0B] text-[#E4E4E7] border border-[#27272A]" : "bg-[#C5A059] text-[#0A0A0B] ml-6 font-medium"}`}>
@@ -1084,6 +1233,7 @@ export default function App() {
                     tickets={tickets} 
                     onUpdateState={handleUpdateState} 
                     userEmail={currentUser?.email}
+                    googleCalendarToken={googleCalendarToken}
                   />
                 )}
 

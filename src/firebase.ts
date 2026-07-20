@@ -5,7 +5,9 @@ import {
   signInWithEmailAndPassword, 
   sendPasswordResetEmail,
   updateProfile,
-  signInAnonymously
+  signInAnonymously,
+  GoogleAuthProvider,
+  signInWithPopup
 } from "firebase/auth";
 import { 
   initializeFirestore, 
@@ -187,5 +189,21 @@ export async function signInAsGuest() {
         throw new Error(regErr.message || "Failed guest access setup fallback");
       }
     }
+  }
+}
+
+/**
+ * 5. GOOGLE CALENDAR AUTH ACCESS
+ */
+export async function connectGoogleCalendar() {
+  try {
+    const provider = new GoogleAuthProvider();
+    provider.addScope("https://www.googleapis.com/auth/calendar");
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    return credential?.accessToken || null;
+  } catch (error: any) {
+    console.error("Failed to authenticate Google Calendar:", error);
+    throw new Error(error.message || "Failed to authenticate Google Calendar");
   }
 }

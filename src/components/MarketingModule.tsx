@@ -13,7 +13,8 @@ import {
   Target,
   Github,
   GitCommit,
-  Loader2
+  Loader2,
+  Trash2
 } from "lucide-react";
 
 interface MarketingModuleProps {
@@ -317,7 +318,20 @@ ${structuredCampaign.rationale}
                 <div key={camp.campaign_id} className="border border-[#27272A] rounded-2xl p-4 hover:bg-[#0A0A0B]/50 transition-all duration-300">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <div>
-                      <h4 className="font-bold text-[#E4E4E7] text-sm leading-tight">{camp.title}</h4>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-bold text-[#E4E4E7] text-sm leading-tight">{camp.title}</h4>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to delete the campaign "${camp.title}"?`)) {
+                              onUpdateState("DELETE_CAMPAIGN", { campaign_id: camp.campaign_id });
+                            }
+                          }}
+                          className="text-red-400/60 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
+                          title="Delete Campaign"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <p className="text-xs text-[#A1A1AA] font-mono mt-0.5">Segment: <span className="text-[#C5A059] font-bold font-sans">{camp.targetSegment}</span> | Budget: ${camp.budget.toLocaleString()}</p>
                     </div>
                     <div>

@@ -29,6 +29,7 @@ interface AgentHubProps {
   tickets: any[];
   onUpdateState: (type: string, payload: any) => Promise<void>;
   userEmail?: string;
+  googleCalendarToken?: string | null;
 }
 
 interface Message {
@@ -39,7 +40,7 @@ interface Message {
   text: string;
 }
 
-export function AgentHub({ customers, campaigns, tickets, onUpdateState, userEmail }: AgentHubProps) {
+export function AgentHub({ customers, campaigns, tickets, onUpdateState, userEmail, googleCalendarToken }: AgentHubProps) {
   const [activeTab, setActiveTab2] = useState<"orchestrator" | "tutor" | "sales" | "marketing" | "support">("orchestrator");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -110,7 +111,8 @@ export function AgentHub({ customers, campaigns, tickets, onUpdateState, userEma
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: userPrompt,
-          mode: activeTab
+          mode: activeTab,
+          googleCalendarToken
         })
       });
       const data = await response.json();

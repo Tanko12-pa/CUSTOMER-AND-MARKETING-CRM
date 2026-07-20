@@ -7,19 +7,103 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import Stripe from "stripe";
 import fs from "fs";
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, 
-  collection, 
-  getDocs, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where 
-} from "firebase/firestore";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+// Define Admin adapters to mimic Client SDK for Firestore
+class AdminCollectionRef {
+  constructor(public path: string) {}
+}
+
+class AdminDocRef {
+  constructor(public path: string) {}
+}
+
+class AdminQuery {
+  constructor(public path: string, public filters: any[] = []) {}
+}
+
+function collection(dbInstance: any, path: string) {
+  return new AdminCollectionRef(path);
+}
+
+function doc(dbInstance: any, path: string, id?: string) {
+  const fullPath = id ? `${path}/${id}` : path;
+  return new AdminDocRef(fullPath);
+}
+
+function where(field: string, op: any, value: any) {
+  return { field, op, value };
+}
+
+function query(colRef: AdminCollectionRef, ...constraints: any[]) {
+  return new AdminQuery(colRef.path, constraints);
+}
+
+async function getDocs(ref: AdminCollectionRef | AdminQuery) {
+  if (!adminDb) {
+    throw new Error("Admin database not initialized.");
+  }
+  let queryRef: any = adminDb.collection(ref.path);
+  if (ref instanceof AdminQuery) {
+    for (const filter of ref.filters) {
+      if (filter && filter.field) {
+        queryRef = queryRef.where(filter.field, filter.op, filter.value);
+      }
+    }
+  }
+  const snapshot = await queryRef.get();
+  const docs: any[] = [];
+  snapshot.forEach((d: any) => {
+    docs.push({
+      id: d.id,
+      exists: () => true,
+      data: () => d.data()
+    });
+  });
+  return {
+    empty: snapshot.empty,
+    forEach: (callback: any) => docs.forEach(callback),
+    docs
+  };
+}
+
+async function getDoc(docRef: AdminDocRef) {
+  if (!adminDb) {
+    throw new Error("Admin database not initialized.");
+  }
+  const snap = await adminDb.doc(docRef.path).get();
+  return {
+    exists: () => snap.exists,
+    id: snap.id,
+    data: () => snap.data()
+  };
+}
+
+async function setDoc(docRef: AdminDocRef, data: any, options?: any) {
+  if (!adminDb) {
+    throw new Error("Admin database not initialized.");
+  }
+  if (options && options.merge) {
+    await adminDb.doc(docRef.path).set(data, { merge: true });
+  } else {
+    await adminDb.doc(docRef.path).set(data);
+  }
+}
+
+async function updateDoc(docRef: AdminDocRef, data: any) {
+  if (!adminDb) {
+    throw new Error("Admin database not initialized.");
+  }
+  await adminDb.doc(docRef.path).update(data);
+}
+
+async function deleteDoc(docRef: AdminDocRef) {
+  if (!adminDb) {
+    throw new Error("Admin database not initialized.");
+  }
+  await adminDb.doc(docRef.path).delete();
+}
 
 dotenv.config();
 
@@ -30,15 +114,21 @@ app.use(cors({
   credentials: true
 }));
 
-// Initialize Firebase App & Firestore Backend Connections
+// Initialize Firebase Admin App & Firestore Backend Connections
+let adminDb: any = null;
 let db: any = null;
 try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(configPath)) {
     const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    const firebaseApp = initializeApp(firebaseConfig);
-    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-    console.log("SUCCESS: Unified Firebase Backend integrated and database connected.");
+    if (getApps().length === 0) {
+      initializeApp({
+        projectId: firebaseConfig.projectId
+      });
+    }
+    adminDb = getFirestore();
+    db = adminDb;
+    console.log("SUCCESS: Unified Firebase Backend integrated and database connected using Firebase Admin SDK.");
   } else {
     console.warn("WARNING: firebase-applet-config.json not found on server root filesystem.");
   }
@@ -95,6 +185,248 @@ function getGeminiClient(): GoogleGenAI {
     });
   }
   return aiClient;
+}
+
+// --- GOOGLE CALENDAR FUNCTION CALLING TOOLS AND HELPER ---
+const googleCalendarTools = [
+  {
+    functionDeclarations: [
+      {
+        name: "get_current_date_and_time",
+        description: "Returns the current system date and time, and fetches any scheduled calendar events from Google Calendar if the token is available.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {},
+          required: []
+        }
+      },
+      {
+        name: "create_calendar_event",
+        description: "Creates a new calendar event in Google Calendar.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: "The title of the event" },
+            description: { type: Type.STRING, description: "Optional description of the event" },
+            startTime: { type: Type.STRING, description: "The ISO string of the start time (e.g., 2026-07-20T17:00:00Z)" },
+            endTime: { type: Type.STRING, description: "The ISO string of the end time (e.g., 2026-07-20T18:00:00Z)" }
+          },
+          required: ["title", "startTime", "endTime"]
+        }
+      },
+      {
+        name: "delete_calendar_event",
+        description: "Deletes a calendar event from Google Calendar.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            eventId: { type: Type.STRING, description: "The unique ID of the Google Calendar event to delete" }
+          },
+          required: ["eventId"]
+        }
+      }
+    ]
+  }
+];
+
+async function generateContentWithCalendar(
+  prompt: string,
+  systemInstruction: string,
+  googleCalendarToken?: string
+): Promise<string> {
+  const ai = getGeminiClient();
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MOCK_KEY" || apiKey === "") {
+    // Intelligent, high-fidelity offline simulated response preserving the full UX
+    return `### 📅 Simulated Calendar & System Intelligence (Offline Mode)
+Google Calendar API is currently simulated because the Gemini API Key is in offline fallback mode.
+
+**Current Date & Time**: ${new Date().toLocaleString()}
+
+**Simulated Calendar Schedule**:
+1. 📅 **Enterprise SLA Touchpoint: Almaric Vance** — 10:00 AM (Status: Synced)
+2. 📅 **Executive Review: Marketing Retrospective** — 2:00 PM (Status: Synced)
+
+*Connect Google Calendar via the UI to authenticate and query real Google Calendar events directly!*`;
+  }
+
+  try {
+    const config: any = {
+      systemInstruction,
+      temperature: 0.3,
+      tools: googleCalendarTools
+    };
+
+    // First model call to check for tool usage
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config
+    });
+
+    const candidate = response.candidates?.[0];
+    const firstPart = candidate?.content?.parts?.[0];
+
+    if (firstPart && "functionCall" in firstPart && firstPart.functionCall) {
+      const call = firstPart.functionCall;
+      const functionName = call.name;
+      const args: any = call.args;
+
+      let functionResult: any;
+
+      if (functionName === "get_current_date_and_time") {
+        const localDate = new Date().toISOString();
+        if (googleCalendarToken) {
+          try {
+            const calendarResponse = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(
+                new Date().toISOString()
+              )}&maxResults=5`,
+              {
+                headers: { Authorization: `Bearer ${googleCalendarToken}` }
+              }
+            );
+            if (calendarResponse.ok) {
+              const events: any = await calendarResponse.json();
+              functionResult = {
+                currentDate: localDate,
+                calendarEvents: events.items || [],
+                status: "Success: Fetched primary calendar events."
+              };
+            } else {
+              functionResult = {
+                currentDate: localDate,
+                error: `Failed to fetch calendar events: ${calendarResponse.status}`,
+                status: "Warning: Google Calendar token invalid or expired."
+              };
+            }
+          } catch (err: any) {
+            functionResult = {
+              currentDate: localDate,
+              error: err.message,
+              status: "Warning: Network error connecting to Google Calendar API."
+            };
+          }
+        } else {
+          functionResult = {
+            currentDate: localDate,
+            status: "Offline Mode: Google Calendar token not provided. Please connect Google Calendar."
+          };
+        }
+      } else if (functionName === "create_calendar_event") {
+        if (googleCalendarToken) {
+          try {
+            const calendarResponse = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${googleCalendarToken}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  summary: args.title,
+                  description: args.description || "",
+                  start: { dateTime: args.startTime },
+                  end: { dateTime: args.endTime }
+                })
+              }
+            );
+            if (calendarResponse.ok) {
+              const created: any = await calendarResponse.json();
+              functionResult = {
+                status: "Success",
+                message: `Successfully created calendar event: ${args.title}`,
+                eventId: created.id,
+                htmlLink: created.htmlLink
+              };
+            } else {
+              const errBody = await calendarResponse.text();
+              functionResult = {
+                status: "Error",
+                error: `Google Calendar API returned status ${calendarResponse.status}: ${errBody}`
+              };
+            }
+          } catch (err: any) {
+            functionResult = {
+              status: "Error",
+              error: `Network error: ${err.message}`
+            };
+          }
+        } else {
+          functionResult = {
+            status: "Error",
+            error: "Google Calendar not connected. Sign in with Google to create events."
+          };
+        }
+      } else if (functionName === "delete_calendar_event") {
+        if (googleCalendarToken) {
+          try {
+            const calendarResponse = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/primary/events/${args.eventId}`,
+              {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${googleCalendarToken}` }
+              }
+            );
+            if (calendarResponse.ok) {
+              functionResult = {
+                status: "Success",
+                message: `Successfully deleted calendar event: ${args.eventId}`
+              };
+            } else {
+              const errBody = await calendarResponse.text();
+              functionResult = {
+                status: "Error",
+                error: `Google Calendar API returned status ${calendarResponse.status}: ${errBody}`
+              };
+            }
+          } catch (err: any) {
+            functionResult = {
+              status: "Error",
+              error: `Network error: ${err.message}`
+            };
+          }
+        } else {
+          functionResult = {
+            status: "Error",
+            error: "Google Calendar not connected. Sign in with Google to delete events."
+          };
+        }
+      }
+
+      // Second model call to supply the function results
+      const secondResponse = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [
+          { role: "user", parts: [{ text: prompt }] },
+          response.candidates[0].content, // Send the original model turn
+          {
+            role: "user",
+            parts: [
+              {
+                functionResponse: {
+                  name: functionName,
+                  response: functionResult
+                }
+              }
+            ]
+          }
+        ],
+        config: {
+          systemInstruction,
+          temperature: 0.3
+        }
+      });
+
+      return secondResponse.text || "Failed to finalize content.";
+    }
+
+    return response.text || "No text returned.";
+  } catch (err: any) {
+    console.error("Error in generateContentWithCalendar:", err);
+    throw err;
+  }
 }
 
 // In-Memory Database representing CRM Cloud Firestore collections
@@ -488,6 +820,7 @@ interface CRMUser {
   plan?: string;
   subscriptionActive?: boolean;
   subscriptionStartDate?: string;
+  stripeCustomerId?: string;
 }
 
 // Global set of simulated database users
@@ -972,6 +1305,20 @@ app.post("/api/update-state", async (req, res) => {
         }
       }
       addAudit("DELETE_RECORDS", "customers", `Bulk deleted ${deletedCount} customer profile(s) via database admin console.`);
+    } else if (type === "DELETE_CAMPAIGN") {
+      const campId = payload.campaign_id;
+      mockCampaigns = mockCampaigns.filter(c => c.campaign_id !== campId);
+      if (db) {
+        await deleteDoc(doc(db, "marketing_campaigns", campId));
+      }
+      addAudit("DELETE_RECORD", "marketing_campaigns", `Deleted marketing campaign: ${campId}`);
+    } else if (type === "DELETE_TICKET") {
+      const ticketId = payload.ticket_id;
+      mockSupportTickets = mockSupportTickets.filter(t => t.ticket_id !== ticketId);
+      if (db) {
+        await deleteDoc(doc(db, "support_tickets", ticketId));
+      }
+      addAudit("DELETE_RECORD", "support_tickets", `Deleted support ticket: ${ticketId}`);
     } else if (type === "ADD_TICKET") {
       const customer = mockCustomers.find(c => c.uid === payload.customer_id);
       const newTicket = {
@@ -1756,95 +2103,30 @@ app.post("/api/gemini/support-portal-faq", async (req, res) => {
 // Primary Server-Side Gemini endpoint
 app.post("/api/gemini/chat", async (req, res) => {
   try {
-    const { prompt, mode, customerContext, useSearch } = req.body;
-    const ai = getGeminiClient();
+    const { prompt, mode, customerContext, useSearch, googleCalendarToken } = req.body;
 
-    let systemInstruction = "You are the Executive Revenue Intelligence Engine for a Next-Gen CRM. Optimize responses with elegant, structured, high-contrast, data-dense layout tables inside your output.";
+    let systemInstruction = "You are the Executive Revenue Intelligence Engine for a Next-Gen CRM. Optimize responses with elegant, structured, high-contrast, data-dense layout tables inside your output. You also have tools to fetch Google Calendar events, create events, and delete events.";
     
     if (mode === "sales") {
       systemInstruction = `You are an AI Sales Agent for CUSTOMER AND MARKETING CRM. 
 You focus on lead scoring, follow-up recommendations, upsell pitches, contract values, and deal risk metrics.
 We have current client context: ${JSON.stringify(customerContext || {})}.
-Produce an amazing structured pitch/analytics response with actionable steps.`;
+Produce an amazing structured pitch/analytics response with actionable steps. You can also fetch or create Google Calendar events.`;
     } else if (mode === "marketing") {
       systemInstruction = `You are an AI Marketing Agent. 
 You are an expert of ad copies, email campaigns, re-engagement workflows, target segments, and multi-touch attribution. 
-Provide creative, targeted campaigns, segmentation tips, or copy draft sequences.`;
+Provide creative, targeted campaigns, segmentation tips, or copy draft sequences. You can also fetch or create Google Calendar events.`;
     } else if (mode === "support") {
       systemInstruction = `You are an AI Customer Support Agent with high EQ and deep compliance rules.
 Analyze customer complaints carefully. Note sentiment.
-Provide a customer ticket response with resolution notes and detailed instructions.`;
+Provide a customer ticket response with resolution notes and detailed instructions. You can also fetch or create Google Calendar events.`;
     } else if (mode === "analytics") {
       systemInstruction = `You are an AI Revenue Analytics Specialist. 
-Analyze numbers, project LTV, compute risk models, detect pipeline anomalies, and present your findings in beautiful markdown layout format.`;
+Analyze numbers, project LTV, compute risk models, detect pipeline anomalies, and present your findings in beautiful markdown layout format. You can also fetch or create Google Calendar events.`;
     }
 
-    // Prepare config, optional search grounding
-    const config: any = {
-      systemInstruction,
-      temperature: 0.3
-    };
-
-    if (useSearch) {
-      config.tools = [{ googleSearch: {} }];
-    }
-
-    let response;
-    
-    if (process.env.GEMINI_API_KEY) {
-      // Real API generation
-      response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config
-      });
-    } else {
-      // Intelligent mock fallback answering logically to preserve user UX
-      let mockText = "";
-      if (mode === "sales") {
-        mockText = `### Sales Intelligence Insights (Local Mode)
-**Target**: ${customerContext?.name || "Target Prospect"}
-**Identified Stage**: ${customerContext?.lifecycleStage || "Qualified Lead"}
-
-1. **AI Lead Qualification Score**: **88/100** — High-tier intent shown.
-2. **Deal Upgrade Recommendation**: 
-   - Propose custom package up-scaling based on current active contract size.
-   - Recommended Follow-up: "Send customized migration proposal detailing specialized localized analytics matrices."
-   
-*Note: Configured with low-latency executive fallback.*`;
-      } else if (mode === "marketing") {
-        mockText = `### AI Marketing Campaign Copy Draft
-**Subject: Turn Data into Growth (Exclusive offer inside 🎁)**
-
-Hey! We noticed you've been optimizing workflows but haven't tapped into the core Firebase database integration. Here is a custom, automated campaign preview tailored to your segment:
-
-- **Key Value Proposition**: Real-time Firestore synchronizations without update gaps.
-- **Conversion CTA**: Click "Launch Campaign" to re-enroll inactive nodes immediately.
-
-*Targeting Segment: Inactive 30 Days*`;
-      } else if (mode === "support") {
-        mockText = `### AI Autonomous Technical Support Case Reply
-**Status**: Case Routed to Specialist Queue | Sentiment Score: **Negatively Charged**
-
-*Dear ${customerContext?.name || "Valued Client"},*
-
-We apologize sincerely for the webhook API rate latency issue you experienced. Our Enterprise team was alerted instantly (TriggerEvent: Deal At Risk Flagged). 
-
-**Immediate Fixes Underway**:
-- Adjusting socket buffers on route queues.
-- Isolating non-critical audit reports into background workers.
-
-*Let us know if you have further concerns.*`;
-      } else {
-        mockText = `### Executive Action Intelligence
-Our analytics predict a **18.5% win-probability lift** by actively initiating personalized, audio-summarized touchpoints across the Enterprise segment. 
-Configure the **Earthy Luxe Comfort controls** via the buttons panel to trigger dynamic automations.`;
-      }
-
-      response = { text: mockText };
-    }
-
-    res.json({ text: response.text });
+    const text = await generateContentWithCalendar(prompt, systemInstruction, googleCalendarToken);
+    res.json({ text });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1900,7 +2182,7 @@ function getCRMSummaryContext() {
 // RESTful AI-Powered Multi-Agent Hub Endpoint 
 app.post("/api/agents/hub", async (req, res) => {
   try {
-    const { prompt, mode, useSearch } = req.body;
+    const { prompt, mode, useSearch, googleCalendarToken } = req.body;
     const dbContext = getCRMSummaryContext();
     const apiKey = process.env.GEMINI_API_KEY;
     const hasApiKey = apiKey && apiKey !== "MOCK_KEY" && apiKey !== "";
@@ -2054,22 +2336,7 @@ Rules:
     // Prepare response
     let finalOutput = "";
     if (hasApiKey) {
-      const ai = getGeminiClient();
-      const config: any = {
-        systemInstruction,
-        temperature: 0.25
-      };
-
-      if (useSearch) {
-        config.tools = [{ googleSearch: {} }];
-      }
-
-      const modelResponse = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config
-      });
-      finalOutput = modelResponse.text;
+      finalOutput = await generateContentWithCalendar(prompt, systemInstruction, googleCalendarToken);
     } else {
       // Advanced, data-aligned offline response generator to preserve premium UX offline
       if (targetAgent === "tutor") {
@@ -2479,29 +2746,150 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     }
     event = stripe.webhooks.constructEvent(req.body, sig as string, webhookSecret);
   } catch (err: any) {
-    console.error("Webhook verification failed:", err.message);
+    console.error(`❌ Webhook Signature Verification Failed: ${err.message}`);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle successful subscriptions
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as any;
-    const userId = session.client_reference_id || session.customer_email;
-    const stripeCustomerId = session.customer;
-    
-    if (userId) {
-      const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === userId.toLowerCase());
+  // Handle the specific events enabled in your Stripe dashboard
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const session = event.data.object as any;
+      console.log(`💰 Checkout completed for session: ${session.id}`);
+      
+      const userId = session.client_reference_id || session.customer_email || (session.customer_details && session.customer_details.email);
+      const stripeCustomerId = session.customer;
+      
+      if (userId) {
+        const userIndex = mockUsersList.findIndex(u => u.email.toLowerCase() === userId.toLowerCase());
+        if (userIndex !== -1) {
+          const planSelected = session.metadata?.plan || "monthly";
+          mockUsersList[userIndex].plan = planSelected;
+          mockUsersList[userIndex].subscriptionActive = true;
+          mockUsersList[userIndex].stripeCustomerId = stripeCustomerId;
+          mockUsersList[userIndex].subscriptionStartDate = new Date().toISOString();
+          
+          if (currentUserSession?.email.toLowerCase() === userId.toLowerCase()) {
+            currentUserSession = mockUsersList[userIndex];
+          }
+          
+          if (db) {
+            try {
+              await setDoc(doc(db, "users", userId.toLowerCase()), {
+                plan: planSelected,
+                subscriptionActive: true,
+                stripeCustomerId: stripeCustomerId,
+                subscriptionStartDate: mockUsersList[userIndex].subscriptionStartDate
+              }, { merge: true });
+            } catch (fsErr: any) {
+              console.error("Firestore update failed on checkout completed:", fsErr.message);
+            }
+          }
+          
+          addAudit("STRIPE_SUBSCRIPTION_SUCCESS", "users", `Stripe Webhook: User ${userId} successfully subscribed under client ID ${stripeCustomerId}`);
+        }
+      }
+      break;
+    }
+
+    case 'customer.subscription.created': {
+      const subCreated = event.data.object as any;
+      console.log(`🆕 Subscription created: ${subCreated.id}`);
+      const customerId = subCreated.customer;
+      addAudit("STRIPE_SUBSCRIPTION_CREATED", "users", `Stripe Webhook: Subscription created ${subCreated.id} for Stripe Customer ${customerId}`);
+      break;
+    }
+
+    case 'customer.subscription.deleted': {
+      const subDeleted = event.data.object as any;
+      console.log(`😢 Subscription ended: ${subDeleted.id}`);
+      const customerId = subDeleted.customer;
+      
+      const userIndex = mockUsersList.findIndex(u => u.stripeCustomerId === customerId);
       if (userIndex !== -1) {
-        mockUsersList[userIndex].plan = session.metadata?.plan || "monthly"; // Upgrade the user to paying plan
-        mockUsersList[userIndex].subscriptionActive = true;
-        mockUsersList[userIndex].subscriptionStartDate = new Date().toISOString();
+        const userId = mockUsersList[userIndex].email;
+        mockUsersList[userIndex].plan = "none";
+        mockUsersList[userIndex].subscriptionActive = false;
+        
         if (currentUserSession?.email.toLowerCase() === userId.toLowerCase()) {
           currentUserSession = mockUsersList[userIndex];
         }
-        addAudit("STRIPE_SUBSCRIPTION_SUCCESS", "users", `Stripe Webhook: User ${userId} successfully subscribed under client ID ${stripeCustomerId}`);
+        
+        if (db) {
+          try {
+            await setDoc(doc(db, "users", userId.toLowerCase()), {
+              plan: "none",
+              subscriptionActive: false
+            }, { merge: true });
+          } catch (fsErr: any) {
+            console.error("Firestore update failed on subscription deleted:", fsErr.message);
+          }
+        }
+        
+        addAudit("SUBSCRIPTION_CANCELED", "users", `Stripe Webhook: Subscription canceled for user ${userId}`);
       }
+      break;
     }
-    console.log(`User ${userId} successfully subscribed with customer ID ${stripeCustomerId}`);
+
+    case 'invoice.paid': {
+      const invoicePaid = event.data.object as any;
+      console.log(`✅ Invoice paid: ${invoicePaid.id}`);
+      const customerId = invoicePaid.customer;
+      
+      const userIndex = mockUsersList.findIndex(u => u.stripeCustomerId === customerId);
+      if (userIndex !== -1) {
+        const userId = mockUsersList[userIndex].email;
+        mockUsersList[userIndex].subscriptionActive = true;
+        
+        if (currentUserSession?.email.toLowerCase() === userId.toLowerCase()) {
+          currentUserSession = mockUsersList[userIndex];
+        }
+        
+        if (db) {
+          try {
+            await setDoc(doc(db, "users", userId.toLowerCase()), {
+              subscriptionActive: true
+            }, { merge: true });
+          } catch (fsErr: any) {
+            console.error("Firestore update failed on invoice paid:", fsErr.message);
+          }
+        }
+        
+        addAudit("INVOICE_PAID", "users", `Stripe Webhook: Invoice paid for user ${userId}`);
+      }
+      break;
+    }
+
+    case 'invoice.payment_failed': {
+      const invoiceFailed = event.data.object as any;
+      console.log(`⚠️ Invoice payment failed: ${invoiceFailed.id}`);
+      const customerId = invoiceFailed.customer;
+      
+      const userIndex = mockUsersList.findIndex(u => u.stripeCustomerId === customerId);
+      if (userIndex !== -1) {
+        const userId = mockUsersList[userIndex].email;
+        mockUsersList[userIndex].subscriptionActive = false;
+        
+        if (currentUserSession?.email.toLowerCase() === userId.toLowerCase()) {
+          currentUserSession = mockUsersList[userIndex];
+        }
+        
+        if (db) {
+          try {
+            await setDoc(doc(db, "users", userId.toLowerCase()), {
+              subscriptionActive: false
+            }, { merge: true });
+          } catch (fsErr: any) {
+            console.error("Firestore update failed on invoice payment failed:", fsErr.message);
+          }
+        }
+        
+        addAudit("INVOICE_PAYMENT_FAILED", "users", `Stripe Webhook: Payment failed for user ${userId}`);
+      }
+      break;
+    }
+
+    default:
+      console.log(`Unhandled event type ${event.type}`);
   }
 
   res.json({ received: true });
@@ -2646,7 +3034,7 @@ async function syncFirestoreData() {
 
 // --- 3. UNLOCKED CRM ENDPOINT (REPLACED AS REQUESTED) ---
 app.post('/api/generate-content', async (req, res) => {
-  const { prompt, userId } = req.body;
+  const { prompt, userId, googleCalendarToken } = req.body;
 
   try {
     if (userId) {
@@ -2656,13 +3044,10 @@ app.post('/api/generate-content', async (req, res) => {
       }
     }
 
-    const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: prompt,
-    });
+    const systemInstruction = "You are a Premium CRM agent with executive privileges. You have tools to get the current date/time, list calendar events, create calendar events, and delete calendar events on behalf of the user.";
+    const result = await generateContentWithCalendar(prompt, systemInstruction, googleCalendarToken);
 
-    res.json({ result: response.text });
+    res.json({ result });
   } catch (error) {
     console.error("Gemini API Error:", error);
     res.status(500).json({ error: "Failed to generate content." });

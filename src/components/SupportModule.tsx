@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { SupportTicket, Customer } from "../types";
-import { MessageSquare, ShieldAlert, Sparkles, Send, CheckSquare, Smile, Frown, Meh, AlertTriangle } from "lucide-react";
+import { MessageSquare, ShieldAlert, Sparkles, Send, CheckSquare, Smile, Frown, Meh, AlertTriangle, Trash2 } from "lucide-react";
 
 interface SupportModuleProps {
   tickets: SupportTicket[];
@@ -350,9 +350,24 @@ export function SupportModule({ tickets, customers, onUpdateState, showToast }: 
 
                       <div className="flex items-center justify-between border-t border-[#27272A] pt-2 text-[10px] text-[#A1A1AA] font-mono">
                         <span className="font-sans font-bold text-[#E4E4E7]">{t.customerName}</span>
-                        <div className="flex items-center space-x-1.5 bg-[#0A0A0B] px-2 py-0.5 rounded border border-[#27272A]">
-                          {sentimentIcon}
-                          <span className="uppercase text-[9px]">{t.sentiment} sentiment</span>
+                        <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-1.5 bg-[#0A0A0B] px-2 py-0.5 rounded border border-[#27272A]">
+                            {sentimentIcon}
+                            <span className="uppercase text-[9px]">{t.sentiment} sentiment</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Are you sure you want to delete ticket ${t.ticket_id.toUpperCase()}?`)) {
+                                onUpdateState("DELETE_TICKET", { ticket_id: t.ticket_id });
+                                if (showToast) showToast("Ticket deleted successfully", "success");
+                              }
+                            }}
+                            className="text-red-400/60 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
+                            title="Delete Support Ticket"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     </div>
