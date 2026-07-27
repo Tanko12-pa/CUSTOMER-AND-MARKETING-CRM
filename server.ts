@@ -7,103 +7,20 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import Stripe from "stripe";
 import fs from "fs";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-
-// Define Admin adapters to mimic Client SDK for Firestore
-class AdminCollectionRef {
-  constructor(public path: string) {}
-}
-
-class AdminDocRef {
-  constructor(public path: string) {}
-}
-
-class AdminQuery {
-  constructor(public path: string, public filters: any[] = []) {}
-}
-
-function collection(dbInstance: any, path: string) {
-  return new AdminCollectionRef(path);
-}
-
-function doc(dbInstance: any, path: string, id?: string) {
-  const fullPath = id ? `${path}/${id}` : path;
-  return new AdminDocRef(fullPath);
-}
-
-function where(field: string, op: any, value: any) {
-  return { field, op, value };
-}
-
-function query(colRef: AdminCollectionRef, ...constraints: any[]) {
-  return new AdminQuery(colRef.path, constraints);
-}
-
-async function getDocs(ref: AdminCollectionRef | AdminQuery) {
-  if (!adminDb) {
-    throw new Error("Admin database not initialized.");
-  }
-  let queryRef: any = adminDb.collection(ref.path);
-  if (ref instanceof AdminQuery) {
-    for (const filter of ref.filters) {
-      if (filter && filter.field) {
-        queryRef = queryRef.where(filter.field, filter.op, filter.value);
-      }
-    }
-  }
-  const snapshot = await queryRef.get();
-  const docs: any[] = [];
-  snapshot.forEach((d: any) => {
-    docs.push({
-      id: d.id,
-      exists: () => true,
-      data: () => d.data()
-    });
-  });
-  return {
-    empty: snapshot.empty,
-    forEach: (callback: any) => docs.forEach(callback),
-    docs
-  };
-}
-
-async function getDoc(docRef: AdminDocRef) {
-  if (!adminDb) {
-    throw new Error("Admin database not initialized.");
-  }
-  const snap = await adminDb.doc(docRef.path).get();
-  return {
-    exists: () => snap.exists,
-    id: snap.id,
-    data: () => snap.data()
-  };
-}
-
-async function setDoc(docRef: AdminDocRef, data: any, options?: any) {
-  if (!adminDb) {
-    throw new Error("Admin database not initialized.");
-  }
-  if (options && options.merge) {
-    await adminDb.doc(docRef.path).set(data, { merge: true });
-  } else {
-    await adminDb.doc(docRef.path).set(data);
-  }
-}
-
-async function updateDoc(docRef: AdminDocRef, data: any) {
-  if (!adminDb) {
-    throw new Error("Admin database not initialized.");
-  }
-  await adminDb.doc(docRef.path).update(data);
-}
-
-async function deleteDoc(docRef: AdminDocRef) {
-  if (!adminDb) {
-    throw new Error("Admin database not initialized.");
-  }
-  await adminDb.doc(docRef.path).delete();
-}
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { 
+  getFirestore, 
+  initializeFirestore,
+  collection, 
+  getDocs, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where 
+} from "firebase/firestore";
 
 dotenv.config();
 
@@ -114,21 +31,18 @@ app.use(cors({
   credentials: true
 }));
 
-// Initialize Firebase Admin App & Firestore Backend Connections
-let adminDb: any = null;
+// Initialize Firebase App & Firestore Backend Connections
 let db: any = null;
 try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(configPath)) {
     const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    if (getApps().length === 0) {
-      initializeApp({
-        projectId: firebaseConfig.projectId
-      });
-    }
-    adminDb = getFirestore();
-    db = adminDb;
-    console.log("SUCCESS: Unified Firebase Backend integrated and database connected using Firebase Admin SDK.");
+    const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    db = initializeFirestore(firebaseApp, {
+      experimentalForceLongPolling: true,
+      ...(firebaseConfig.firestoreDatabaseId ? { databaseId: firebaseConfig.firestoreDatabaseId } : {})
+    });
+    console.log("SUCCESS: Unified Firebase Backend integrated and database connected.");
   } else {
     console.warn("WARNING: firebase-applet-config.json not found on server root filesystem.");
   }
