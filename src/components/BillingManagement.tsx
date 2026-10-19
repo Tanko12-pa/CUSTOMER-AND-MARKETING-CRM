@@ -670,7 +670,22 @@ export function BillingManagement({
                     referrerPolicy="no-referrer"
                   />
                   <div>
-                    <h4 className="text-sm font-bold text-white font-sans">{githubProfile?.username}</h4>
+                    {githubProfile?.username ? (
+                      <h4 className="text-sm font-bold text-white font-sans">
+                        <a
+                          href={`https://github.com/${encodeURIComponent(githubProfile.username)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`View ${githubProfile.username}'s GitHub profile (opens in a new tab)`}
+                          className="inline-flex items-center gap-1.5 hover:text-[#C5A059] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C5A059]"
+                        >
+                          {githubProfile.username}
+                          <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                        </a>
+                      </h4>
+                    ) : (
+                      <h4 className="text-sm font-bold text-white font-sans">GitHub account connected</h4>
+                    )}
                     <span className="text-[10px] text-zinc-500 font-mono block">Connected: {githubProfile?.connectedAt ? new Date(githubProfile.connectedAt).toLocaleDateString() : "Active"}</span>
                   </div>
                 </div>
