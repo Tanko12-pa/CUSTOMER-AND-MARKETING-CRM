@@ -2,7 +2,7 @@
 
 This repository includes a manually triggered, read-only repository baseline workflow at `.github/workflows/repository-baseline.md`. It summarizes the project structure and configured development checks without changing files or opening issues or pull requests.
 
-It also includes `.github/workflows/mona-github-info-website.md`, which reviews the CRM's GitHub-connected profile UI weekly or on manual dispatch and can prepare at most one draft PR for a grounded, focused website improvement. It does not assume the app is a separate Mona-owned site or invent personal profile details.
+It also includes `.github/workflows/mona-github-info-website.md`, which reviews the CRM's GitHub-connected profile UI weekly or on manual dispatch and can prepare at most one draft PR for a grounded, focused website improvement. Its PR body cites the tracked source files and line ranges actually reviewed, explains how that evidence supports the proposed change, and records files changed and validation. It does not assume the app is a separate Mona-owned site or invent personal profile details.
 
 ## Set up
 

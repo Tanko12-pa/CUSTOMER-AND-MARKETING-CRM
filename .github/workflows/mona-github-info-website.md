@@ -49,4 +49,12 @@ Inspect the existing implementation and its documentation for a clear website im
 
 Make one focused change only when its value is clear from the repository. Inspect the resulting diff and run relevant checks only if their dependencies are already available; do not install packages or execute application services. Do not claim checks passed unless they actually ran.
 
-If you make a change, request one **draft** pull request with a concise summary, rationale, affected files, and any checks not run. Never merge, publish, or mark the pull request ready for review. If there is no well-supported improvement, make no changes and summarize why in the workflow run.
+For every proposed change, keep a concise audit trail of the evidence and decision:
+
+- **Sources reviewed:** cite each relevant tracked file with its path and line range, and state what behavior or convention the source establishes. Cite only files actually inspected; do not treat generated output or external material as evidence.
+- **Reasoning:** connect the cited source facts to the user-visible problem, explain why the proposed change addresses it, and note important alternatives or constraints considered. Separate directly observed facts from recommendations.
+- **Change and validation:** identify the exact files changed and checks actually run; clearly list checks not run and why.
+
+Include these sections in the draft pull request body, in this order: **Summary**, **Sources reviewed**, **Reasoning**, **Files changed**, **Validation**. Source citations must use repository paths and line ranges (for example, `src/components/BillingManagement.tsx:660-690`), with a short description of the evidence. Do not claim a source proves more than it says.
+
+If there is no well-supported improvement, make no changes and report **Sources reviewed**, **Reasoning**, and why no change or pull request was justified in the workflow run output. Never merge, publish, or mark a pull request ready for review.
